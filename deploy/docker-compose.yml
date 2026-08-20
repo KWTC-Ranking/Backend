@@ -1,0 +1,35 @@
+# Reverse proxy that terminates HTTPS for both the frontend and backend containers, sharing the
+# `kwtc-ranking` Docker network with them so it can reach each by container name. Caddy fetches
+# and renews Let's Encrypt certificates automatically for whatever domains are in the Caddyfile —
+# no manual certbot/cron needed. See deploy/README.md for the full runbook.
+#
+#   docker compose up -d
+#
+# Requires a .env file (copy .env.example) with FRONTEND_DOMAIN and API_DOMAIN set, and both
+# domains' DNS already pointed at this host, and ports 80/443 open in the AWS security group
+# (443 for HTTPS, 80 for the ACME HTTP-01 challenge Caddy uses to prove domain ownership).
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: kwtc-ranking-caddy
+    environment:
+      FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:?Set FRONTEND_DOMAIN in .env}
+      API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - kwtc-ranking
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:
+
+networks:
+  kwtc-ranking:
+    external: true

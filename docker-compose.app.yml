@@ -20,3 +20,13 @@ services:
     ports:
       - "${APP_PORT:-8080}:8080"
     restart: unless-stopped
+    networks:
+      - default
+      - kwtc-ranking
+
+networks:
+  kwtc-ranking:
+    # Shared with the frontend container and the deploy/ Caddy reverse proxy so it can reach
+    # this app by container name (ranking-app) without publishing 8080 to the internet. Created
+    # once with `docker network create kwtc-ranking` — see deploy/README.md.
+    external: true

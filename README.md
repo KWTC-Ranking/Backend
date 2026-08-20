@@ -70,6 +70,9 @@ git pull && docker compose -f docker-compose.yml -f docker-compose.app.yml up -d
 (비밀번호 불일치). 해결책: 처음부터 비밀번호를 일관되게 유지하거나, 전체 스택을 처음 실행하기 전에
 `docker compose down -v`로 볼륨을 한 번 지우세요.
 
+AWS EC2에 프런트엔드까지 함께 HTTPS로 배포하는 전체 절차(도메인/DNS/보안그룹/Caddy 리버스
+프록시 포함)는 [`deploy/README.md`](deploy/README.md)에 정리해뒀습니다.
+
 **실제(로컬이 아닌) 배포 시 참고사항**:
 - TLS를 위해 nginx/Caddy 같은 리버스 프록시 뒤에 두세요 — 앱 자체는 순수 HTTP만 서빙합니다.
 - Postgres의 5432 포트를 인터넷에 노출하지 마세요. 현재 구성상 `app` 컨테이너만 compose 내부

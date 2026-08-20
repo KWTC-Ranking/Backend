@@ -1,0 +1,7 @@
+{$FRONTEND_DOMAIN} {
+	reverse_proxy kwtc-ranking-frontend:80
+}
+
+{$API_DOMAIN} {
+	reverse_proxy ranking-app:8080
+}
