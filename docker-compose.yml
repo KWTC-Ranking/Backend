@@ -2,19 +2,35 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: ranking-postgres
-    ports:
-      - "5432:5432"
     environment:
-      POSTGRES_DB: ranking
-      POSTGRES_USER: ranking
-      POSTGRES_PASSWORD: ranking
+      POSTGRES_DB: ${POSTGRES_DB:-ranking}
+      POSTGRES_USER: ${POSTGRES_USER:-ranking}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ranking}
     volumes:
       - ranking-pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ranking"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ranking}"]
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  app:
+    build: .
+    container_name: ranking-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-ranking}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-ranking}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-ranking}
+      RANKING_JWT_SECRET: ${RANKING_JWT_SECRET:?Set RANKING_JWT_SECRET in .env (long random string)}
+      RANKING_ADMIN_USERNAME: ${RANKING_ADMIN_USERNAME:-admin}
+      RANKING_ADMIN_PASSWORD: ${RANKING_ADMIN_PASSWORD:?Set RANKING_ADMIN_PASSWORD in .env}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    restart: unless-stopped
 
 volumes:
   ranking-pgdata:

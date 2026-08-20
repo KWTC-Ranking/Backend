@@ -11,17 +11,56 @@ points with a tier + margin-weighted formula, and auto-requartiles players into 
 - springdoc-openapi (Swagger UI)
 - JUnit 5, AssertJ, Mockito, Testcontainers
 
-## Running locally
+## Running locally (dev — app on host, DB in Docker)
 
-1. Start PostgreSQL:
+1. Start just PostgreSQL (no `.env` needed — defaults to db/user/password `ranking`):
    ```
-   docker compose up -d
+   docker compose up -d postgres
    ```
 2. Run the app (Flyway migrates the schema on startup):
    ```
    ./gradlew bootRun
    ```
 3. Swagger UI: http://localhost:8080/swagger-ui.html
+
+## Deployment (docker-compose, DB + app together)
+
+This runs the whole stack — Postgres and the packaged Spring Boot app — as containers on one host,
+built from the included `Dockerfile` (multi-stage: Gradle build → slim JRE runtime image).
+
+1. Copy the env template and fill in real secrets:
+   ```
+   cp .env.example .env
+   ```
+   At minimum set `RANKING_JWT_SECRET` and `RANKING_ADMIN_PASSWORD` — `docker compose` refuses to
+   start the `app` service without them (fails fast with a clear error instead of silently running
+   insecure). Generate a secret with PowerShell:
+   ```
+   [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Maximum 256 }))
+   ```
+2. Build and start everything:
+   ```
+   docker compose up -d --build
+   ```
+3. Check it came up healthy:
+   ```
+   docker compose logs -f app
+   ```
+   You should see Flyway apply the migrations and (on the very first run only) a line from
+   `AdminAccountSeeder` confirming the admin account was seeded.
+4. The API is now reachable at `http://<host>:${APP_PORT:-8080}` (Swagger UI at `/swagger-ui.html`).
+   Log in as the seeded admin (see [Authentication](#authentication)) and change the password.
+
+**Redeploying after a code change**: `git pull && docker compose up -d --build app` — this rebuilds
+only the app image and recreates that container; Postgres and its data volume (`ranking-pgdata`) are
+untouched.
+
+**Notes for a real (non-localhost) deployment**:
+- Put this behind a reverse proxy (nginx/Caddy) for TLS — the app itself only serves plain HTTP.
+- Don't publish Postgres's 5432 port to the internet; as written, only the `app` container talks to
+  it over the internal compose network, so nothing needs to expose it externally.
+- Back up the `ranking-pgdata` volume (e.g. `docker exec ranking-postgres pg_dump -U ranking ranking`)
+  before any upgrade you're unsure about.
 
 ## Tests
 
