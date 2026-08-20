@@ -11,18 +11,30 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tennisclub.ranking.config.SecurityConfig;
+import com.tennisclub.ranking.security.JwtAuthenticationFilter;
 import com.tennisclub.ranking.domain.Player;
+import com.tennisclub.ranking.domain.PlayerRole;
 import com.tennisclub.ranking.dto.player.PlayerCreateRequest;
 import com.tennisclub.ranking.exception.ResourceNotFoundException;
 import com.tennisclub.ranking.service.PlayerService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(PlayerController.class)
+@WebMvcTest(
+		controllers = PlayerController.class,
+		excludeFilters =
+				@ComponentScan.Filter(
+						type = FilterType.ASSIGNABLE_TYPE,
+						classes = {SecurityConfig.class, JwtAuthenticationFilter.class}))
+@AutoConfigureMockMvc(addFilters = false)
 class PlayerControllerWebMvcTest {
 
 	@Autowired
@@ -35,7 +47,7 @@ class PlayerControllerWebMvcTest {
 	private PlayerService playerService;
 
 	private Player samplePlayer(Long id) {
-		Player player = new Player("Alice", "alice@example.com");
+		Player player = new Player("Alice", "alice@example.com", "alice", "hash", PlayerRole.MEMBER);
 		player.setId(id);
 		return player;
 	}
@@ -46,7 +58,8 @@ class PlayerControllerWebMvcTest {
 
 		mockMvc.perform(post("/api/players")
 						.contentType(MediaType.APPLICATION_JSON)
-						.content(objectMapper.writeValueAsString(new PlayerCreateRequest("Alice", "alice@example.com"))))
+						.content(objectMapper.writeValueAsString(
+								new PlayerCreateRequest("Alice", "alice@example.com", "alice", "password123", null))))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.fullName", is("Alice")));
 	}
@@ -55,7 +68,7 @@ class PlayerControllerWebMvcTest {
 	void createPlayer_blankName_returns400() throws Exception {
 		mockMvc.perform(post("/api/players")
 						.contentType(MediaType.APPLICATION_JSON)
-						.content(objectMapper.writeValueAsString(new PlayerCreateRequest("", null))))
+						.content(objectMapper.writeValueAsString(new PlayerCreateRequest("", null, "alice", "password123", null))))
 				.andExpect(status().isBadRequest());
 	}
 

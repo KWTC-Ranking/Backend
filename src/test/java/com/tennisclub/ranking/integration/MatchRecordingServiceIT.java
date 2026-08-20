@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.tennisclub.ranking.domain.MatchSide;
 import com.tennisclub.ranking.domain.MatchType;
 import com.tennisclub.ranking.domain.Player;
+import com.tennisclub.ranking.domain.PlayerRole;
 import com.tennisclub.ranking.domain.PlayerRanking;
 import com.tennisclub.ranking.dto.match.MatchRecordRequest;
 import com.tennisclub.ranking.dto.match.MatchResponse;
@@ -37,7 +38,8 @@ class MatchRecordingServiceIT extends AbstractIntegrationTest {
 	private PointTransactionRepository pointTransactionRepository;
 
 	private Player player(String name) {
-		return playerRepository.save(new Player(name, null));
+		String username = name.toLowerCase() + "-" + System.nanoTime();
+		return playerRepository.save(new Player(name, null, username, "hash", PlayerRole.MEMBER));
 	}
 
 	@Test

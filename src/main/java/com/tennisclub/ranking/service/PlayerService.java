@@ -3,6 +3,7 @@ package com.tennisclub.ranking.service;
 import com.tennisclub.ranking.domain.MatchType;
 import com.tennisclub.ranking.domain.Player;
 import com.tennisclub.ranking.domain.PlayerRanking;
+import com.tennisclub.ranking.domain.PlayerRole;
 import com.tennisclub.ranking.dto.player.PlayerCreateRequest;
 import com.tennisclub.ranking.dto.player.PlayerUpdateRequest;
 import com.tennisclub.ranking.dto.ranking.PointHistoryEntryResponse;
@@ -14,6 +15,7 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,10 +26,16 @@ public class PlayerService {
 	private final PlayerRepository playerRepository;
 	private final PlayerRankingRepository playerRankingRepository;
 	private final PointTransactionRepository pointTransactionRepository;
+	private final PasswordEncoder passwordEncoder;
 
 	@Transactional
 	public Player createPlayer(PlayerCreateRequest request) {
-		return playerRepository.save(new Player(request.fullName(), request.email()));
+		if (playerRepository.findByUsername(request.username()).isPresent()) {
+			throw new IllegalArgumentException("Username '" + request.username() + "' is already taken");
+		}
+		PlayerRole role = request.role() != null ? request.role() : PlayerRole.MEMBER;
+		String passwordHash = passwordEncoder.encode(request.password());
+		return playerRepository.save(new Player(request.fullName(), request.email(), request.username(), passwordHash, role));
 	}
 
 	public Player getPlayer(Long id) {

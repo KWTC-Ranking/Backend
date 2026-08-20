@@ -9,6 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tennisclub.ranking.config.SecurityConfig;
+import com.tennisclub.ranking.security.JwtAuthenticationFilter;
 import com.tennisclub.ranking.dto.admin.TierWeightEntryRequest;
 import com.tennisclub.ranking.dto.admin.TierWeightEntryResponse;
 import com.tennisclub.ranking.dto.admin.TierWeightMatrixResponse;
@@ -18,12 +20,21 @@ import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(AdminTierWeightController.class)
+@WebMvcTest(
+		controllers = AdminTierWeightController.class,
+		excludeFilters =
+				@ComponentScan.Filter(
+						type = FilterType.ASSIGNABLE_TYPE,
+						classes = {SecurityConfig.class, JwtAuthenticationFilter.class}))
+@AutoConfigureMockMvc(addFilters = false)
 class AdminTierWeightControllerWebMvcTest {
 
 	@Autowired

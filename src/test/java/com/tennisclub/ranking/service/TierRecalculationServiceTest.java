@@ -5,6 +5,7 @@ import static org.mockito.Mockito.when;
 
 import com.tennisclub.ranking.domain.MatchType;
 import com.tennisclub.ranking.domain.Player;
+import com.tennisclub.ranking.domain.PlayerRole;
 import com.tennisclub.ranking.domain.PlayerRanking;
 import com.tennisclub.ranking.repository.PlayerRankingRepository;
 import java.util.List;
@@ -26,7 +27,8 @@ class TierRecalculationServiceTest {
 
 	private List<PlayerRanking> rankingsOfSize(int n) {
 		return IntStream.range(0, n)
-				.mapToObj(i -> new PlayerRanking(new Player("Player " + i, null), MatchType.SINGLES))
+				.mapToObj(i -> new PlayerRanking(
+						new Player("Player " + i, null, "player" + i, "hash", PlayerRole.MEMBER), MatchType.SINGLES))
 				.toList();
 	}
 

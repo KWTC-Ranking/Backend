@@ -5,12 +5,26 @@ import java.util.HashMap;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+	@ExceptionHandler(AuthenticationException.class)
+	public ResponseEntity<ApiError> handleAuthentication(AuthenticationException ex, HttpServletRequest request) {
+		return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+				.body(ApiError.of(401, "Unauthorized", ex.getMessage(), request.getRequestURI()));
+	}
+
+	@ExceptionHandler(AccessDeniedException.class)
+	public ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException ex, HttpServletRequest request) {
+		return ResponseEntity.status(HttpStatus.FORBIDDEN)
+				.body(ApiError.of(403, "Forbidden", "You do not have permission to access this resource", request.getRequestURI()));
+	}
 
 	@ExceptionHandler(ResourceNotFoundException.class)
 	public ResponseEntity<ApiError> handleNotFound(ResourceNotFoundException ex, HttpServletRequest request) {

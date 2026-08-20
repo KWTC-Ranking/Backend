@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.tennisclub.ranking.domain.MatchType;
 import com.tennisclub.ranking.domain.Player;
+import com.tennisclub.ranking.domain.PlayerRole;
 import com.tennisclub.ranking.domain.PlayerRanking;
 import com.tennisclub.ranking.repository.PlayerRankingRepository;
 import com.tennisclub.ranking.repository.PlayerRepository;
@@ -28,7 +29,7 @@ class TierRecalculationIT extends AbstractIntegrationTest {
 	@Test
 	void recalculateTiers_persistsQuartileSplitAcrossEightPlayers() {
 		for (int i = 0; i < 8; i++) {
-			Player player = playerRepository.save(new Player("Player" + i, null));
+			Player player = playerRepository.save(new Player("Player" + i, null, "tierplayer" + i, "hash", PlayerRole.MEMBER));
 			PlayerRanking ranking = playerRankingRepository.save(new PlayerRanking(player, MatchType.SINGLES));
 			ranking.setPoints((8 - i) * 10);
 		}

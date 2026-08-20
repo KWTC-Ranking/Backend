@@ -6,6 +6,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tennisclub.ranking.config.SecurityConfig;
+import com.tennisclub.ranking.security.JwtAuthenticationFilter;
 import com.tennisclub.ranking.domain.MatchSide;
 import com.tennisclub.ranking.domain.MatchType;
 import com.tennisclub.ranking.dto.match.MatchRecordRequest;
@@ -18,12 +20,21 @@ import com.tennisclub.ranking.service.MatchRecordingService;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(MatchController.class)
+@WebMvcTest(
+		controllers = MatchController.class,
+		excludeFilters =
+				@ComponentScan.Filter(
+						type = FilterType.ASSIGNABLE_TYPE,
+						classes = {SecurityConfig.class, JwtAuthenticationFilter.class}))
+@AutoConfigureMockMvc(addFilters = false)
 class MatchControllerWebMvcTest {
 
 	@Autowired
