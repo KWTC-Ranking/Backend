@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -38,13 +39,20 @@ public class MatchController {
 		return matchRecordingService.recordMatch(request);
 	}
 
+	/**
+	 * readOnly transaction so MatchSummaryResponse can lazily load each match's teams/players
+	 * (search() doesn't fetch them eagerly to keep the paginated query fetch-join-free).
+	 */
 	@GetMapping
+	@Transactional(readOnly = true)
 	public Page<MatchSummaryResponse> listMatches(
 			@RequestParam(required = false) MatchType matchType, @RequestParam(required = false) Long playerId, Pageable pageable) {
 		return matchRepository.search(matchType, playerId, pageable).map(MatchSummaryResponse::from);
 	}
 
+	/** readOnly transaction so the match's "sets" collection (not eagerly fetched, see MatchRepository) can lazy-load. */
 	@GetMapping("/{id}")
+	@Transactional(readOnly = true)
 	public MatchResponse getMatch(@PathVariable Long id) {
 		Match match = matchRepository
 				.findByIdWithDetails(id)
