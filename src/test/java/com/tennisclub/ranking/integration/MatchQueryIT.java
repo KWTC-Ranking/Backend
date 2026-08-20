@@ -17,6 +17,7 @@ import com.tennisclub.ranking.dto.player.PlayerCreateRequest;
 import com.tennisclub.ranking.dto.player.PlayerResponse;
 import com.tennisclub.ranking.domain.MatchSide;
 import com.tennisclub.ranking.domain.MatchType;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,10 +26,12 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Deliberately NOT @Transactional: the whole point is to exercise GET /api/matches and
- * GET /api/matches/{id} the way a real request does — no ambient test transaction propping
- * the Hibernate session open behind the scenes. This is exactly the scenario that let a
- * LazyInitializationException / MultipleBagFetchException slip through earlier.
+ * Deliberately NOT @Transactional: the whole point is to exercise GET /api/matches,
+ * GET /api/matches/{id}, and GET /api/leaderboards/{type} the way a real request does — no
+ * ambient test transaction propping the Hibernate session open behind the scenes. This is
+ * exactly the scenario that let a LazyInitializationException / MultipleBagFetchException slip
+ * through earlier (matches list/detail, then again for the leaderboard reading
+ * PlayerRanking.player.fullName).
  */
 @AutoConfigureMockMvc
 class MatchQueryIT extends AbstractIntegrationTest {
@@ -86,6 +89,40 @@ class MatchQueryIT extends AbstractIntegrationTest {
 		assertThat(detail.get("teams").size()).isEqualTo(2);
 		assertThat(detail.get("sets").size()).isEqualTo(2);
 		assertThat(detail.get("pointTransactions").size()).isEqualTo(2);
+	}
+
+	@Test
+	void singlesLeaderboard_afterRecordingAMatch_returnsOkWithPlayerNames() throws Exception {
+		String adminToken = loginAndGetToken(securityProperties.getDefaultAdminUsername(), securityProperties.getDefaultAdminPassword());
+
+		Long winnerId = createPlayer(adminToken, "leaderboard-winner");
+		Long loserId = createPlayer(adminToken, "leaderboard-loser");
+
+		MatchRecordRequest matchRequest = new MatchRecordRequest(
+				MatchType.SINGLES,
+				null,
+				List.of(
+						new MatchTeamRequest(MatchSide.A, List.of(winnerId)),
+						new MatchTeamRequest(MatchSide.B, List.of(loserId))),
+				List.of(new MatchSetRequest(1, 4, 0), new MatchSetRequest(2, 4, 1)));
+
+		mockMvc.perform(post("/api/matches")
+						.header("Authorization", "Bearer " + adminToken)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(matchRequest)))
+				.andExpect(status().isCreated());
+
+		String leaderboardBody = mockMvc.perform(
+						get("/api/leaderboards/singles").header("Authorization", "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andReturn()
+				.getResponse()
+				.getContentAsString();
+		JsonNode leaderboard = objectMapper.readTree(leaderboardBody);
+		assertThat(leaderboard.isArray()).isTrue();
+		List<String> names = new ArrayList<>();
+		leaderboard.forEach(entry -> names.add(entry.get("fullName").asText()));
+		assertThat(names).contains("leaderboard-winner", "leaderboard-loser");
 	}
 
 	private Long createPlayer(String adminToken, String username) throws Exception {

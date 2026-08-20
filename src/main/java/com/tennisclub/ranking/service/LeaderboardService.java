@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -15,6 +16,8 @@ public class LeaderboardService {
 
 	private final PlayerRankingRepository playerRankingRepository;
 
+	/** readOnly transaction so ranking.getPlayer() (LAZY) can initialize; PlayerRanking never fetches it eagerly. */
+	@Transactional(readOnly = true)
 	public List<LeaderboardEntryResponse> getLeaderboard(MatchType matchType) {
 		List<PlayerRanking> rankings = playerRankingRepository.findByMatchTypeOrderByPointsDescIdAsc(matchType);
 		List<LeaderboardEntryResponse> entries = new ArrayList<>();
