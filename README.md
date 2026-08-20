@@ -1,104 +1,104 @@
 # Tennis Club Ranking Service
 
-Spring Boot backend for a tennis club's singles/doubles rankings. Tracks matches, computes ranking
-points with a tier + margin-weighted formula, and auto-requartiles players into 4 tiers per discipline.
+테니스 동아리의 단식/복식 랭킹을 관리하는 Spring Boot 백엔드입니다. 경기 결과를 기록하고, 티어 + 세트
+격차 가중치 공식으로 랭킹 점수를 계산하며, 종목별로 4개 티어를 자동 재배정합니다.
 
-## Stack
+## 스택
 
 - Java 21, Spring Boot 3.3, Gradle (Groovy DSL)
 - Spring Web, Spring Data JPA, Bean Validation, Spring Security (JWT)
-- PostgreSQL + Flyway migrations
+- PostgreSQL + Flyway 마이그레이션
 - springdoc-openapi (Swagger UI)
 - JUnit 5, AssertJ, Mockito, Testcontainers
 
-There are two docker-compose files, deliberately kept separate: `docker-compose.yml` (just
-PostgreSQL — zero config) and `docker-compose.app.yml` (an overlay that adds the app container — needs
-secrets). Compose validates env-var placeholders for *every* service in the files you pass, even ones
-you don't start, so keeping the app in a second file is what lets plain `docker compose up -d` stay
-zero-config instead of demanding secrets just to start a local Postgres.
+docker-compose 파일은 의도적으로 두 개로 나눠져 있습니다: `docker-compose.yml`(PostgreSQL만, 별도
+설정 없이 바로 사용 가능)과 `docker-compose.app.yml`(앱 컨테이너를 추가하는 오버레이 — 시크릿 필요).
+Compose는 실행하지 않는 서비스라도 불러온 파일에 있는 서비스라면 환경변수 플레이스홀더를 전부
+검증하기 때문에, 앱을 두 번째 파일로 분리해둬야 `docker compose up -d` 하나만으로 로컬 Postgres를
+아무 설정 없이 띄울 수 있습니다.
 
-## Running locally (dev — app on host, DB in Docker)
+## 로컬 실행 (개발용 — 앱은 호스트에서, DB는 Docker에서)
 
-1. Start PostgreSQL (no `.env` needed — defaults to db/user/password `ranking`):
+1. PostgreSQL 실행 (`.env` 불필요 — db/user/password 기본값은 전부 `ranking`):
    ```
    docker compose up -d
    ```
-2. Run the app (Flyway migrates the schema on startup):
+2. 앱 실행 (시작할 때 Flyway가 스키마를 마이그레이션합니다):
    ```
    ./gradlew bootRun
    ```
 3. Swagger UI: http://localhost:8080/swagger-ui.html
 
-## Deployment (docker-compose, DB + app together)
+## 배포 (docker-compose, DB + 앱 함께)
 
-This runs the whole stack — Postgres and the packaged Spring Boot app — as containers on one host,
-built from the included `Dockerfile` (multi-stage: Gradle build → slim JRE runtime image).
+Postgres와 패키징된 Spring Boot 앱을 한 호스트에서 컨테이너로 함께 띄우는 방식입니다. 포함된
+`Dockerfile`(멀티스테이지: Gradle 빌드 → 슬림 JRE 런타임 이미지)로 빌드합니다.
 
-1. Copy the env template and fill in real secrets:
+1. 환경변수 템플릿을 복사하고 실제 시크릿 값을 채웁니다:
    ```
    cp .env.example .env
    ```
-   At minimum set `RANKING_JWT_SECRET` and `RANKING_ADMIN_PASSWORD` — compose refuses to start the
-   `app` service without them (fails fast with a clear error instead of silently running insecure).
-   Generate a secret with PowerShell:
+   최소한 `RANKING_JWT_SECRET`과 `RANKING_ADMIN_PASSWORD`는 반드시 설정해야 합니다 — 값이 없으면
+   compose가 `app` 서비스 시작을 아예 거부합니다(안전하지 않게 조용히 실행되는 대신 명확한 오류로
+   즉시 실패). PowerShell로 시크릿 생성:
    ```
    [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Maximum 256 }))
    ```
-2. Build and start everything (note the two `-f` flags — this is what pulls in the app overlay):
+2. 빌드 후 전체 실행 (`-f` 플래그 두 개를 써야 app 오버레이가 함께 적용됩니다):
    ```
    docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build
    ```
-3. Check it came up healthy:
+3. 정상적으로 떴는지 확인:
    ```
    docker compose -f docker-compose.yml -f docker-compose.app.yml logs -f app
    ```
-   You should see Flyway apply the migrations and (on the very first run only) a line from
-   `AdminAccountSeeder` confirming the admin account was seeded.
-4. The API is now reachable at `http://<host>:${APP_PORT:-8080}` (Swagger UI at `/swagger-ui.html`).
-   Log in as the seeded admin (see [Authentication](#authentication)) and change the password.
+   Flyway가 마이그레이션을 적용하는 로그와, (최초 1회에 한해) `AdminAccountSeeder`가 관리자 계정을
+   생성했다는 로그가 보이면 정상입니다.
+4. 이제 `http://<host>:${APP_PORT:-8080}`에서 API에 접근할 수 있습니다 (Swagger UI는
+   `/swagger-ui.html`). 시드된 관리자 계정으로 로그인해서([인증](#인증) 참고) 비밀번호를 바꿔주세요.
 
-**Redeploying after a code change**:
+**코드 변경 후 재배포**:
 ```
 git pull && docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build app
 ```
-This rebuilds only the app image and recreates that container; Postgres and its data volume
-(`ranking-pgdata`) are untouched.
+앱 이미지만 다시 빌드하고 해당 컨테이너만 재생성합니다. Postgres와 그 데이터 볼륨
+(`ranking-pgdata`)은 그대로 유지됩니다.
 
-**Gotcha**: `POSTGRES_PASSWORD` only takes effect the first time Postgres initializes an empty volume.
-If you already started the DB once (e.g. via step 1 above) and then change `POSTGRES_PASSWORD` in
-`.env` before running the full stack, the app will fail to connect (password mismatch) because the
-existing volume still has the old password baked in. Fix: either keep the password consistent from the
-start, or wipe the volume once with `docker compose down -v` before the first full-stack run.
+**주의할 점**: `POSTGRES_PASSWORD`는 Postgres가 빈 볼륨을 최초로 초기화할 때만 적용됩니다. (위 1번
+단계 등으로) DB를 한 번이라도 띄운 적이 있는 상태에서 전체 스택을 실행하기 전에 `.env`의
+`POSTGRES_PASSWORD`를 바꾸면, 기존 볼륨에는 예전 비밀번호가 그대로 남아있어서 앱이 접속에 실패합니다
+(비밀번호 불일치). 해결책: 처음부터 비밀번호를 일관되게 유지하거나, 전체 스택을 처음 실행하기 전에
+`docker compose down -v`로 볼륨을 한 번 지우세요.
 
-**Notes for a real (non-localhost) deployment**:
-- Put this behind a reverse proxy (nginx/Caddy) for TLS — the app itself only serves plain HTTP.
-- Don't publish Postgres's 5432 port to the internet; as written, only the `app` container talks to
-  it over the internal compose network, so nothing needs to expose it externally.
-- Back up the `ranking-pgdata` volume (e.g. `docker exec ranking-postgres pg_dump -U ranking ranking`)
-  before any upgrade you're unsure about.
+**실제(로컬이 아닌) 배포 시 참고사항**:
+- TLS를 위해 nginx/Caddy 같은 리버스 프록시 뒤에 두세요 — 앱 자체는 순수 HTTP만 서빙합니다.
+- Postgres의 5432 포트를 인터넷에 노출하지 마세요. 현재 구성상 `app` 컨테이너만 compose 내부
+  네트워크를 통해 접근하므로, 외부에 노출할 필요가 없습니다.
+- 확신이 서지 않는 업그레이드 전에는 `ranking-pgdata` 볼륨을 백업하세요 (예:
+  `docker exec ranking-postgres pg_dump -U ranking ranking`).
 
-## Tests
+## 테스트
 
 ```
 ./gradlew test
 ```
 
-- `ScoringServiceTest`, `TierRecalculationServiceTest` — pure unit tests, no Docker required.
-- `*ControllerWebMvcTest` — `@WebMvcTest` slices, no Docker required.
-- `MatchRecordingServiceIT`, `TierRecalculationIT`, `SecurityIT` — Testcontainers integration tests that
-  spin up a real PostgreSQL container. **Require a running Docker daemon.**
+- `ScoringServiceTest`, `TierRecalculationServiceTest` — 순수 단위 테스트, Docker 불필요.
+- `*ControllerWebMvcTest` — `@WebMvcTest` 슬라이스 테스트, Docker 불필요.
+- `MatchRecordingServiceIT`, `TierRecalculationIT`, `SecurityIT` — 실제 PostgreSQL 컨테이너를 띄우는
+  Testcontainers 통합 테스트. **Docker 데몬이 실행 중이어야 합니다.**
 
-## Authentication
+## 인증
 
-The API is protected with JWT bearer auth. You do **not** need to insert anything into the database
-by hand — on first startup the app auto-seeds a single default admin account (see `AdminAccountSeeder`):
+API는 JWT Bearer 인증으로 보호됩니다. 데이터베이스에 직접 뭔가를 넣을 필요는 **없습니다** — 최초
+실행 시 앱이 기본 관리자 계정을 자동으로 생성합니다 (`AdminAccountSeeder` 참고):
 
-- username: `admin` (override with env var `RANKING_ADMIN_USERNAME`)
-- password: `ChangeMe123!` (override with env var `RANKING_ADMIN_PASSWORD` — **set this before the
-  first startup in any shared/deployed environment**, since the seeder only runs once, when no
-  `ADMIN`-role player exists yet)
+- 아이디: `admin` (환경변수 `RANKING_ADMIN_USERNAME`으로 재정의 가능)
+- 비밀번호: `ChangeMe123!` (환경변수 `RANKING_ADMIN_PASSWORD`로 재정의 가능 — 공유/배포되는 환경
+  이라면 **최초 실행 전에 반드시 설정하세요**. 이 시더는 `ADMIN` 역할 선수가 하나도 없을 때 딱
+  한 번만 실행됩니다)
 
-Log in to get a token:
+로그인해서 토큰 발급:
 
 ```
 POST /api/auth/login
@@ -107,104 +107,102 @@ POST /api/auth/login
 -> { "token": "...", "playerId": 1, "username": "admin", "role": "ADMIN" }
 ```
 
-Send the token on every subsequent request: `Authorization: Bearer <token>`.
+이후 모든 요청에 토큰을 실어 보내세요: `Authorization: Bearer <token>`.
 
-- `POST /api/players` (add a club member), `PUT /api/players/{id}` (profile),
-  `PUT /api/players/{id}/password` (reset someone's password), and everything under `/api/admin/**`
-  require the `ADMIN` role.
-- Every other `/api/**` endpoint just requires being logged in (any role).
-- `POST /api/auth/login` and the Swagger UI routes are open.
+- `POST /api/players`(동아리원 추가), `PUT /api/players/{id}`(프로필 수정),
+  `PUT /api/players/{id}/password`(비밀번호 초기화), 그리고 `/api/admin/**` 전체는 `ADMIN` 역할이
+  필요합니다.
+- 나머지 `/api/**` 엔드포인트는 로그인만 되어 있으면 됩니다 (역할 무관).
+- `POST /api/auth/login`과 Swagger UI 경로는 인증 없이 열려 있습니다.
 
-Other JWT settings (`ranking.security.*` in `application.yml`): `jwt-secret` (override with
-`RANKING_JWT_SECRET` — required for any real deployment, the default is dev-only) and
-`jwt-expiration-minutes` (default 1440 = 24h).
+그 외 JWT 관련 설정(`application.yml`의 `ranking.security.*`): `jwt-secret`(환경변수
+`RANKING_JWT_SECRET`으로 재정의 — 실제 배포에서는 반드시 설정, 기본값은 개발용)과
+`jwt-expiration-minutes`(기본값 1440 = 24시간).
 
-### Changing passwords
+### 비밀번호 변경
 
-Two ways, both hash the new password with bcrypt before storing it:
+두 가지 방법이 있고, 둘 다 새 비밀번호를 bcrypt로 해시해서 저장합니다:
 
-- **Self-service** (any logged-in player, including admin, changes their own — needs the current one):
+- **본인이 직접 변경** (관리자 포함, 로그인한 본인이 자기 비밀번호를 바꿈 — 현재 비밀번호 필요):
   ```
-  POST /api/auth/change-password      (Authorization: Bearer <your token>)
-  { "currentPassword": "...", "newPassword": "at-least-8-chars" }
+  POST /api/auth/change-password      (Authorization: Bearer <내 토큰>)
+  { "currentPassword": "...", "newPassword": "8자 이상" }
   ```
-  Wrong `currentPassword` → `401`. Use this right after first login to replace the seeded admin
-  password.
-- **Admin reset** (a member forgot their password — admin sets a new one directly, no old password
-  needed):
+  `currentPassword`가 틀리면 `401`. 최초 로그인 직후 시드된 관리자 비밀번호를 바꿀 때 사용하세요.
+- **관리자가 초기화** (회원이 비밀번호를 잊어버린 경우 — 관리자가 현재 비밀번호 없이 바로 새
+  비밀번호로 설정):
   ```
-  PUT /api/players/{id}/password      (Authorization: Bearer <admin token>)
-  { "newPassword": "at-least-8-chars" }
+  PUT /api/players/{id}/password      (Authorization: Bearer <관리자 토큰>)
+  { "newPassword": "8자 이상" }
   ```
 
-### Adding club members
+### 동아리원 추가
 
-Only an admin can add members, via the same player-creation endpoint used before, now extended with
-login credentials:
+관리자만 회원을 추가할 수 있으며, 기존에 쓰던 선수 생성 엔드포인트가 이제 로그인 정보까지 함께
+받도록 확장되었습니다:
 
 ```
-POST /api/players          (Authorization: Bearer <admin token>)
+POST /api/players          (Authorization: Bearer <관리자 토큰>)
 {
   "fullName": "홍길동",
   "email": "hong@example.com",
   "username": "hong",
-  "password": "at-least-8-chars",
-  "role": "MEMBER"          // optional, defaults to MEMBER; omit unless adding another admin
+  "password": "8자 이상",
+  "role": "MEMBER"          // 선택, 생략 시 MEMBER — 다른 관리자를 추가할 때만 명시
 }
 ```
 
-The new member can then log in with that `username`/`password` at `POST /api/auth/login`. There's no
-self-signup endpoint by design — an admin (동아리장) enrolls each member.
+새로 추가된 회원은 그 `username`/`password`로 `POST /api/auth/login`에서 바로 로그인할 수 있습니다.
+자체 회원가입 엔드포인트는 의도적으로 만들지 않았습니다 — 관리자(동아리장)가 한 명씩 등록하는
+구조입니다.
 
-### Trying it out in Swagger UI
+### Swagger UI에서 테스트하기
 
-Swagger UI (`/swagger-ui.html`) has a padlock ("Authorize") button because `OpenApiConfig` declares a
-`bearerAuth` HTTP-bearer security scheme and attaches it globally, so springdoc renders a lock icon on
-every operation.
+Swagger UI(`/swagger-ui.html`)에는 자물쇠("Authorize") 버튼이 있습니다. `OpenApiConfig`가
+`bearerAuth` HTTP-bearer 보안 스킴을 선언하고 전역으로 붙여놨기 때문에, springdoc이 모든 오퍼레이션에
+자물쇠 아이콘을 렌더링합니다.
 
-1. Expand `POST /api/auth/login` → *Try it out* → run it with your username/password.
-2. Copy just the `token` value from the response body (not the whole JSON, not including `Bearer `).
-3. Click **Authorize** (top right, or the lock icon on any operation) → paste the token into the
-   `bearerAuth` field → **Authorize** → **Close**.
-4. Every request Swagger UI sends from then on automatically carries
-   `Authorization: Bearer <token>`, so you can exercise the protected endpoints directly from the page.
-   Re-run step 1–3 once the token expires (`jwt-expiration-minutes`, default 24h) or after you log
-   in again with a new/changed password.
+1. `POST /api/auth/login`을 펼치고 → *Try it out* → 아이디/비밀번호로 실행합니다.
+2. 응답 본문에서 `token` 값만 복사합니다 (JSON 전체가 아니라, `Bearer `도 붙이지 않고 값만).
+3. 우측 상단 **Authorize** 버튼(또는 아무 오퍼레이션의 자물쇠 아이콘) 클릭 → `bearerAuth` 칸에 토큰
+   붙여넣기 → **Authorize** → **Close**.
+4. 이후 Swagger UI가 보내는 모든 요청에 자동으로 `Authorization: Bearer <token>`이 실려서, 보호된
+   엔드포인트도 그 자리에서 바로 테스트할 수 있습니다. 토큰이 만료되거나(`jwt-expiration-minutes`,
+   기본 24시간) 비밀번호를 바꿔서 다시 로그인해야 할 때는 1~3단계를 다시 반복하세요.
 
-## Scoring model
+## 점수 계산 모델
 
-For each recorded match:
+경기가 기록될 때마다:
 
 ```
-setMargin    = setsWonByWinner - setsWonByLoser         (e.g. 4-0 -> 4, 4-3 -> 1)
-marginWeight = min(1 + setMargin * 0.1, ranking.margin-weight-cap)   (default cap 2.0)
-tierWeight   = lookup(tier_weight_config, winnerTier, loserTier)     (admin-tunable, seeded 4x4 matrix)
+setMargin    = setsWonByWinner - setsWonByLoser         (예: 4-0 -> 4, 4-3 -> 1)
+marginWeight = min(1 + setMargin * 0.1, ranking.margin-weight-cap)   (기본 cap 2.0)
+tierWeight   = lookup(tier_weight_config, winnerTier, loserTier)     (관리자가 조정 가능, 시드된 4x4 매트릭스)
 winnerPoints = round(ranking.base-points * tierWeight * marginWeight)
-loserPoints  = round(winnerPoints * ranking.loser-consolation-ratio) (default ratio 0 -> loser gets 0)
+loserPoints  = round(winnerPoints * ranking.loser-consolation-ratio) (기본 비율 0 -> 패자는 0점)
 ```
 
-- Tiers (1 = best, 4 = worst) are **not** manually assigned. After every match, all players in that
-  discipline (singles/doubles are tracked completely separately) are re-sorted by points and split
-  into quartiles.
-- New players have no ranking row until their first match in a discipline; they start at 0 points /
-  tier 4 once recorded.
-- Doubles rankings are per-individual (partners vary match to match), not per fixed team. The "team
-  tier" used for scoring a doubles match is the rounded average of the two partners' tiers, and a
-  winning pair each receive the full `winnerPoints` (not split).
-- Every point award is recorded as a `PointTransaction` audit row (base/tier/margin weights, tiers at
-  the time, points before/after) — see `GET /api/players/{id}/point-history`.
-- Admins can retune the 16-cell tier weight matrix at runtime via
-  `GET/PUT /api/admin/tier-weights` without a redeploy.
+- 티어(1이 최상위, 4가 최하위)는 **수동으로 지정하지 않습니다**. 매 경기 후, 같은 종목(단식/복식은
+  완전히 별도로 관리)의 전체 선수를 점수순으로 재정렬해서 4분위로 다시 나눕니다.
+- 새로 추가된 선수는 해당 종목에서 첫 경기를 치르기 전까지는 랭킹 row 자체가 없습니다. 첫 경기를
+  치르면 0점 / 티어 4로 시작합니다.
+- 복식 랭킹은 (매 경기 파트너가 바뀌므로) 고정 팀이 아니라 개인별로 집계됩니다. 복식 경기의 점수
+  계산에 쓰이는 "팀 티어"는 두 파트너 티어의 평균(반올림)이며, 이긴 팀의 두 파트너는 각각
+  `winnerPoints` 전액을 받습니다 (나누지 않음).
+- 모든 점수 지급은 `PointTransaction` 감사 기록으로 남습니다 (기본점수/티어가중치/마진가중치, 당시
+  티어, 전/후 점수) — `GET /api/players/{id}/point-history`에서 확인 가능합니다.
+- 관리자는 재배포 없이 런타임에 16칸짜리 티어 가중치 매트릭스를 `GET/PUT /api/admin/tier-weights`로
+  조정할 수 있습니다.
 
-## Key endpoints
+## 주요 엔드포인트
 
 - `POST /api/auth/login`, `POST /api/auth/change-password`
-- `POST /api/players` (ADMIN only), `GET /api/players`, `GET/PUT /api/players/{id}` (PUT is ADMIN only)
-- `PUT /api/players/{id}/password` (ADMIN only — reset a member's password)
+- `POST /api/players`(ADMIN 전용), `GET /api/players`, `GET/PUT /api/players/{id}`(PUT은 ADMIN 전용)
+- `PUT /api/players/{id}/password`(ADMIN 전용 — 회원 비밀번호 초기화)
 - `GET /api/players/{id}/rankings`, `GET /api/players/{id}/point-history`
-- `POST /api/matches` — record a singles or doubles match (teams + per-set game scores)
+- `POST /api/matches` — 단식/복식 경기 결과 기록 (팀 구성 + 세트별 게임 스코어)
 - `GET /api/matches`, `GET /api/matches/{id}`
 - `GET /api/leaderboards/singles`, `GET /api/leaderboards/doubles`
 - `GET/PUT /api/admin/tier-weights`
 
-Full request/response shapes are documented in Swagger UI once the app is running.
+전체 요청/응답 형태는 앱 실행 후 Swagger UI에서 확인할 수 있습니다.
