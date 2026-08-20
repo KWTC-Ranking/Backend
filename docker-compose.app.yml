@@ -16,6 +16,7 @@ services:
       RANKING_JWT_SECRET: ${RANKING_JWT_SECRET:?Set RANKING_JWT_SECRET in .env (long random string)}
       RANKING_ADMIN_USERNAME: ${RANKING_ADMIN_USERNAME:-admin}
       RANKING_ADMIN_PASSWORD: ${RANKING_ADMIN_PASSWORD:?Set RANKING_ADMIN_PASSWORD in .env}
+      RANKING_SECURITY_ALLOWEDORIGINS: ${RANKING_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
     ports:
       - "${APP_PORT:-8080}:8080"
     restart: unless-stopped

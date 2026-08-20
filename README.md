@@ -74,6 +74,10 @@ git pull && docker compose -f docker-compose.yml -f docker-compose.app.yml up -d
 - TLS를 위해 nginx/Caddy 같은 리버스 프록시 뒤에 두세요 — 앱 자체는 순수 HTTP만 서빙합니다.
 - Postgres의 5432 포트를 인터넷에 노출하지 마세요. 현재 구성상 `app` 컨테이너만 compose 내부
   네트워크를 통해 접근하므로, 외부에 노출할 필요가 없습니다.
+- `.env`의 `RANKING_ALLOWED_ORIGINS`를 프런트엔드가 실제로 서빙되는 주소로 설정하세요 (예:
+  `https://ranking.kwtc.example`). 기본값은 로컬 Vite 개발 서버 주소라서, 이걸 안 바꾸면 배포된
+  프런트엔드에서 오는 요청이 전부 브라우저 CORS 에러로 막힙니다. 여러 개면 콤마로 구분해서 나열하면
+  됩니다.
 - 확신이 서지 않는 업그레이드 전에는 `ranking-pgdata` 볼륨을 백업하세요 (예:
   `docker exec ranking-postgres pg_dump -U ranking ranking`).
 
