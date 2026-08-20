@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: ranking
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/ranking}
+    username: ${SPRING_DATASOURCE_USERNAME:ranking}
+    password: ${SPRING_DATASOURCE_PASSWORD:ranking}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+    show-sql: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+
+server:
+  port: ${SERVER_PORT:8080}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+ranking:
+  base-points: 100
+  margin-weight-cap: 2.0
+  loser-consolation-ratio: 0.0
