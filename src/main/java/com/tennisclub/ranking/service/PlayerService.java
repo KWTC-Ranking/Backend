@@ -15,6 +15,7 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -75,5 +76,22 @@ public class PlayerService {
 				? pointTransactionRepository.findByPlayerIdOrderByCreatedAtDesc(playerId, pageable)
 				: pointTransactionRepository.findByPlayerIdAndMatchTypeOrderByCreatedAtDesc(playerId, matchType, pageable);
 		return page.map(PointHistoryEntryResponse::from);
+	}
+
+	/** Self-service password change — requires knowing the current password. */
+	@Transactional
+	public void changePassword(Long playerId, String currentPassword, String newPassword) {
+		Player player = getPlayer(playerId);
+		if (!passwordEncoder.matches(currentPassword, player.getPasswordHash())) {
+			throw new BadCredentialsException("Current password is incorrect");
+		}
+		player.setPasswordHash(passwordEncoder.encode(newPassword));
+	}
+
+	/** Admin-triggered reset (e.g. a member forgot their password) — no current password needed. */
+	@Transactional
+	public void resetPassword(Long playerId, String newPassword) {
+		Player player = getPlayer(playerId);
+		player.setPasswordHash(passwordEncoder.encode(newPassword));
 	}
 }

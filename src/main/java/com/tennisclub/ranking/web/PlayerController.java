@@ -1,6 +1,7 @@
 package com.tennisclub.ranking.web;
 
 import com.tennisclub.ranking.domain.MatchType;
+import com.tennisclub.ranking.dto.player.PasswordResetRequest;
 import com.tennisclub.ranking.dto.player.PlayerCreateRequest;
 import com.tennisclub.ranking.dto.player.PlayerRankingResponse;
 import com.tennisclub.ranking.dto.player.PlayerResponse;
@@ -13,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -60,5 +62,12 @@ public class PlayerController {
 	public Page<PointHistoryEntryResponse> getPointHistory(
 			@PathVariable Long id, @RequestParam(required = false) MatchType matchType, Pageable pageable) {
 		return playerService.getPointHistory(id, matchType, pageable);
+	}
+
+	/** Admin-only: reset a member's password (e.g. they forgot it) without needing the old one. */
+	@PutMapping("/{id}/password")
+	public ResponseEntity<Void> resetPassword(@PathVariable Long id, @Valid @RequestBody PasswordResetRequest request) {
+		playerService.resetPassword(id, request.newPassword());
+		return ResponseEntity.noContent().build();
 	}
 }

@@ -1,0 +1,21 @@
+# Overlay on top of docker-compose.yml that adds the app container, for a full deployment:
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build
+# Requires a .env file (see .env.example) with RANKING_JWT_SECRET and RANKING_ADMIN_PASSWORD set —
+# compose refuses to start this service without them.
+services:
+  app:
+    build: .
+    container_name: ranking-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-ranking}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-ranking}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-ranking}
+      RANKING_JWT_SECRET: ${RANKING_JWT_SECRET:?Set RANKING_JWT_SECRET in .env (long random string)}
+      RANKING_ADMIN_USERNAME: ${RANKING_ADMIN_USERNAME:-admin}
+      RANKING_ADMIN_PASSWORD: ${RANKING_ADMIN_PASSWORD:?Set RANKING_ADMIN_PASSWORD in .env}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    restart: unless-stopped

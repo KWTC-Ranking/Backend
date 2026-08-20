@@ -11,11 +11,17 @@ points with a tier + margin-weighted formula, and auto-requartiles players into 
 - springdoc-openapi (Swagger UI)
 - JUnit 5, AssertJ, Mockito, Testcontainers
 
+There are two docker-compose files, deliberately kept separate: `docker-compose.yml` (just
+PostgreSQL — zero config) and `docker-compose.app.yml` (an overlay that adds the app container — needs
+secrets). Compose validates env-var placeholders for *every* service in the files you pass, even ones
+you don't start, so keeping the app in a second file is what lets plain `docker compose up -d` stay
+zero-config instead of demanding secrets just to start a local Postgres.
+
 ## Running locally (dev — app on host, DB in Docker)
 
-1. Start just PostgreSQL (no `.env` needed — defaults to db/user/password `ranking`):
+1. Start PostgreSQL (no `.env` needed — defaults to db/user/password `ranking`):
    ```
-   docker compose up -d postgres
+   docker compose up -d
    ```
 2. Run the app (Flyway migrates the schema on startup):
    ```
@@ -32,28 +38,37 @@ built from the included `Dockerfile` (multi-stage: Gradle build → slim JRE run
    ```
    cp .env.example .env
    ```
-   At minimum set `RANKING_JWT_SECRET` and `RANKING_ADMIN_PASSWORD` — `docker compose` refuses to
-   start the `app` service without them (fails fast with a clear error instead of silently running
-   insecure). Generate a secret with PowerShell:
+   At minimum set `RANKING_JWT_SECRET` and `RANKING_ADMIN_PASSWORD` — compose refuses to start the
+   `app` service without them (fails fast with a clear error instead of silently running insecure).
+   Generate a secret with PowerShell:
    ```
    [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Maximum 256 }))
    ```
-2. Build and start everything:
+2. Build and start everything (note the two `-f` flags — this is what pulls in the app overlay):
    ```
-   docker compose up -d --build
+   docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build
    ```
 3. Check it came up healthy:
    ```
-   docker compose logs -f app
+   docker compose -f docker-compose.yml -f docker-compose.app.yml logs -f app
    ```
    You should see Flyway apply the migrations and (on the very first run only) a line from
    `AdminAccountSeeder` confirming the admin account was seeded.
 4. The API is now reachable at `http://<host>:${APP_PORT:-8080}` (Swagger UI at `/swagger-ui.html`).
    Log in as the seeded admin (see [Authentication](#authentication)) and change the password.
 
-**Redeploying after a code change**: `git pull && docker compose up -d --build app` — this rebuilds
-only the app image and recreates that container; Postgres and its data volume (`ranking-pgdata`) are
-untouched.
+**Redeploying after a code change**:
+```
+git pull && docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build app
+```
+This rebuilds only the app image and recreates that container; Postgres and its data volume
+(`ranking-pgdata`) are untouched.
+
+**Gotcha**: `POSTGRES_PASSWORD` only takes effect the first time Postgres initializes an empty volume.
+If you already started the DB once (e.g. via step 1 above) and then change `POSTGRES_PASSWORD` in
+`.env` before running the full stack, the app will fail to connect (password mismatch) because the
+existing volume still has the old password baked in. Fix: either keep the password consistent from the
+start, or wipe the volume once with `docker compose down -v` before the first full-stack run.
 
 **Notes for a real (non-localhost) deployment**:
 - Put this behind a reverse proxy (nginx/Caddy) for TLS — the app itself only serves plain HTTP.
@@ -94,14 +109,33 @@ POST /api/auth/login
 
 Send the token on every subsequent request: `Authorization: Bearer <token>`.
 
-- `POST /api/players` (add a club member) and everything under `/api/admin/**` require the `ADMIN`
-  role.
+- `POST /api/players` (add a club member), `PUT /api/players/{id}` (profile),
+  `PUT /api/players/{id}/password` (reset someone's password), and everything under `/api/admin/**`
+  require the `ADMIN` role.
 - Every other `/api/**` endpoint just requires being logged in (any role).
 - `POST /api/auth/login` and the Swagger UI routes are open.
 
 Other JWT settings (`ranking.security.*` in `application.yml`): `jwt-secret` (override with
 `RANKING_JWT_SECRET` — required for any real deployment, the default is dev-only) and
 `jwt-expiration-minutes` (default 1440 = 24h).
+
+### Changing passwords
+
+Two ways, both hash the new password with bcrypt before storing it:
+
+- **Self-service** (any logged-in player, including admin, changes their own — needs the current one):
+  ```
+  POST /api/auth/change-password      (Authorization: Bearer <your token>)
+  { "currentPassword": "...", "newPassword": "at-least-8-chars" }
+  ```
+  Wrong `currentPassword` → `401`. Use this right after first login to replace the seeded admin
+  password.
+- **Admin reset** (a member forgot their password — admin sets a new one directly, no old password
+  needed):
+  ```
+  PUT /api/players/{id}/password      (Authorization: Bearer <admin token>)
+  { "newPassword": "at-least-8-chars" }
+  ```
 
 ### Adding club members
 
@@ -121,6 +155,21 @@ POST /api/players          (Authorization: Bearer <admin token>)
 
 The new member can then log in with that `username`/`password` at `POST /api/auth/login`. There's no
 self-signup endpoint by design — an admin (동아리장) enrolls each member.
+
+### Trying it out in Swagger UI
+
+Swagger UI (`/swagger-ui.html`) has a padlock ("Authorize") button because `OpenApiConfig` declares a
+`bearerAuth` HTTP-bearer security scheme and attaches it globally, so springdoc renders a lock icon on
+every operation.
+
+1. Expand `POST /api/auth/login` → *Try it out* → run it with your username/password.
+2. Copy just the `token` value from the response body (not the whole JSON, not including `Bearer `).
+3. Click **Authorize** (top right, or the lock icon on any operation) → paste the token into the
+   `bearerAuth` field → **Authorize** → **Close**.
+4. Every request Swagger UI sends from then on automatically carries
+   `Authorization: Bearer <token>`, so you can exercise the protected endpoints directly from the page.
+   Re-run step 1–3 once the token expires (`jwt-expiration-minutes`, default 24h) or after you log
+   in again with a new/changed password.
 
 ## Scoring model
 
@@ -149,8 +198,9 @@ loserPoints  = round(winnerPoints * ranking.loser-consolation-ratio) (default ra
 
 ## Key endpoints
 
-- `POST /api/auth/login`
+- `POST /api/auth/login`, `POST /api/auth/change-password`
 - `POST /api/players` (ADMIN only), `GET /api/players`, `GET/PUT /api/players/{id}` (PUT is ADMIN only)
+- `PUT /api/players/{id}/password` (ADMIN only — reset a member's password)
 - `GET /api/players/{id}/rankings`, `GET /api/players/{id}/point-history`
 - `POST /api/matches` — record a singles or doubles match (teams + per-set game scores)
 - `GET /api/matches`, `GET /api/matches/{id}`
