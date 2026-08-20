@@ -2,6 +2,7 @@ package com.tennisclub.ranking.config;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
+import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
@@ -20,6 +21,13 @@ public class RankingSecurityProperties {
 
 	@NotBlank
 	private String defaultAdminPassword = "ChangeMe123!";
+
+	/** Origins allowed to call the API from a browser (CORS). Defaults cover common React dev servers. */
+	private List<String> allowedOrigins = List.of(
+			"http://localhost:5173",
+			"http://127.0.0.1:5173",
+			"http://localhost:3000",
+			"http://127.0.0.1:3000");
 
 	public String getJwtSecret() {
 		return jwtSecret;
@@ -51,5 +59,13 @@ public class RankingSecurityProperties {
 
 	public void setDefaultAdminPassword(String defaultAdminPassword) {
 		this.defaultAdminPassword = defaultAdminPassword;
+	}
+
+	public List<String> getAllowedOrigins() {
+		return allowedOrigins;
+	}
+
+	public void setAllowedOrigins(List<String> allowedOrigins) {
+		this.allowedOrigins = allowedOrigins;
 	}
 }
