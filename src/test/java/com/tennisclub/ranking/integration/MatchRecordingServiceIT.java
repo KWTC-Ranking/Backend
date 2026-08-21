@@ -47,15 +47,18 @@ class MatchRecordingServiceIT extends AbstractIntegrationTest {
 		Player winner = player("Alice");
 		Player loser = player("Bob");
 
+		// full shutout (0 games won by the loser in every set) so loser points stay 0 -- the
+		// close-loss / partial-games case is covered separately by
+		// singlesMatch_closeLoss_awardsLoserProportionalConsolationPoints below.
 		MatchRecordRequest request = new MatchRecordRequest(
 				MatchType.SINGLES,
 				null,
 				List.of(new MatchTeamRequest(MatchSide.A, List.of(winner.getId())), new MatchTeamRequest(MatchSide.B, List.of(loser.getId()))),
 				List.of(
 						new MatchSetRequest(1, 4, 0),
-						new MatchSetRequest(2, 4, 1),
-						new MatchSetRequest(3, 4, 2),
-						new MatchSetRequest(4, 4, 3)));
+						new MatchSetRequest(2, 4, 0),
+						new MatchSetRequest(3, 4, 0),
+						new MatchSetRequest(4, 4, 0)));
 
 		MatchResponse response = matchRecordingService.recordMatch(request);
 		assertThat(response.winningSide()).isEqualTo(MatchSide.A);
@@ -71,6 +74,32 @@ class MatchRecordingServiceIT extends AbstractIntegrationTest {
 		assertThat(loserRanking.getPoints()).isEqualTo(0);
 
 		assertThat(pointTransactionRepository.findByMatchId(response.id())).hasSize(2);
+	}
+
+	@Test
+	void singlesMatch_closeLoss_awardsLoserProportionalConsolationPoints() {
+		Player winner = player("CloseWinner");
+		Player loser = player("CloseLoser");
+
+		// loser takes 3 of 7 sets -- a close loss, not a shutout
+		MatchRecordRequest request = new MatchRecordRequest(
+				MatchType.SINGLES,
+				null,
+				List.of(new MatchTeamRequest(MatchSide.A, List.of(winner.getId())), new MatchTeamRequest(MatchSide.B, List.of(loser.getId()))),
+				List.of(
+						new MatchSetRequest(1, 4, 1),
+						new MatchSetRequest(2, 1, 4),
+						new MatchSetRequest(3, 4, 2),
+						new MatchSetRequest(4, 2, 4),
+						new MatchSetRequest(5, 4, 3),
+						new MatchSetRequest(6, 3, 4),
+						new MatchSetRequest(7, 4, 1)));
+
+		matchRecordingService.recordMatch(request);
+
+		PlayerRanking loserRanking =
+				playerRankingRepository.findByPlayerIdAndMatchType(loser.getId(), MatchType.SINGLES).orElseThrow();
+		assertThat(loserRanking.getPoints()).isGreaterThan(0);
 	}
 
 	@Test

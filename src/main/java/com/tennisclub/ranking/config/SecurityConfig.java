@@ -63,6 +63,8 @@ public class SecurityConfig {
 						.hasRole("ADMIN")
 						.requestMatchers(HttpMethod.PUT, "/api/players/*/password")
 						.hasRole("ADMIN")
+						.requestMatchers(HttpMethod.DELETE, "/api/players/*")
+						.hasRole("ADMIN")
 						.requestMatchers("/api/admin/**")
 						.hasRole("ADMIN")
 						.anyRequest()

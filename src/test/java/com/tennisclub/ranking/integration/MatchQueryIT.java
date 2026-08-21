@@ -126,7 +126,7 @@ class MatchQueryIT extends AbstractIntegrationTest {
 	}
 
 	private Long createPlayer(String adminToken, String username) throws Exception {
-		PlayerCreateRequest request = new PlayerCreateRequest(username, null, username, "password123", null);
+		PlayerCreateRequest request = new PlayerCreateRequest(username, null, username, "password123", null, null);
 		String body = mockMvc.perform(post("/api/players")
 						.header("Authorization", "Bearer " + adminToken)
 						.contentType(MediaType.APPLICATION_JSON)

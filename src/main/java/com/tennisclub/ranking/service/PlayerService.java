@@ -1,5 +1,6 @@
 package com.tennisclub.ranking.service;
 
+import com.tennisclub.ranking.config.RankingProperties;
 import com.tennisclub.ranking.domain.MatchType;
 import com.tennisclub.ranking.domain.Player;
 import com.tennisclub.ranking.domain.PlayerRanking;
@@ -7,6 +8,7 @@ import com.tennisclub.ranking.domain.PlayerRole;
 import com.tennisclub.ranking.dto.player.PlayerCreateRequest;
 import com.tennisclub.ranking.dto.player.PlayerUpdateRequest;
 import com.tennisclub.ranking.dto.ranking.PointHistoryEntryResponse;
+import com.tennisclub.ranking.exception.PlayerDeletionNotAllowedException;
 import com.tennisclub.ranking.exception.ResourceNotFoundException;
 import com.tennisclub.ranking.repository.PlayerRankingRepository;
 import com.tennisclub.ranking.repository.PlayerRepository;
@@ -24,10 +26,13 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class PlayerService {
 
+	private static final int MAX_TIER = 4;
+
 	private final PlayerRepository playerRepository;
 	private final PlayerRankingRepository playerRankingRepository;
 	private final PointTransactionRepository pointTransactionRepository;
 	private final PasswordEncoder passwordEncoder;
+	private final RankingProperties rankingProperties;
 
 	@Transactional
 	public Player createPlayer(PlayerCreateRequest request) {
@@ -36,7 +41,28 @@ public class PlayerService {
 		}
 		PlayerRole role = request.role() != null ? request.role() : PlayerRole.MEMBER;
 		String passwordHash = passwordEncoder.encode(request.password());
-		return playerRepository.save(new Player(request.fullName(), request.email(), request.username(), passwordHash, role));
+		Player player = playerRepository.save(
+				new Player(request.fullName(), request.email(), request.username(), passwordHash, role));
+
+		if (request.initialTier() != null) {
+			seedRanking(player, MatchType.SINGLES, request.initialTier());
+			seedRanking(player, MatchType.DOUBLES, request.initialTier());
+		}
+
+		return player;
+	}
+
+	/**
+	 * Eagerly creates a PlayerRanking instead of waiting for the player's first match (see
+	 * MatchRecordingService.findOrCreateRankings), seeded with points proportional to the
+	 * admin-chosen tier so the very next tier recalculation places them in roughly the right
+	 * quartile instead of at the bottom alongside every other 0-point player.
+	 */
+	private void seedRanking(Player player, MatchType matchType, int initialTier) {
+		PlayerRanking ranking = new PlayerRanking(player, matchType);
+		ranking.setTier(initialTier);
+		ranking.setPoints((MAX_TIER - initialTier) * rankingProperties.getTierSeedStep());
+		playerRankingRepository.save(ranking);
 	}
 
 	public Player getPlayer(Long id) {
@@ -63,6 +89,23 @@ public class PlayerService {
 			player.setActive(request.active());
 		}
 		return player;
+	}
+
+	/**
+	 * Hard delete — only for players with no recorded match history (e.g. a test/mistaken
+	 * account). A PlayerRanking row only exists once a player has played a match (see
+	 * MatchRecordingService), so its presence is what we use to detect real history.
+	 * Players who have played should be deactivated instead, not deleted, since their matches
+	 * still need to reference a valid player.
+	 */
+	@Transactional
+	public void deletePlayer(Long id) {
+		Player player = getPlayer(id);
+		if (!playerRankingRepository.findByPlayerId(id).isEmpty()) {
+			throw new PlayerDeletionNotAllowedException(
+					"Player " + id + " has recorded match history and cannot be deleted; deactivate instead");
+		}
+		playerRepository.delete(player);
 	}
 
 	public List<PlayerRanking> getRankings(Long playerId) {

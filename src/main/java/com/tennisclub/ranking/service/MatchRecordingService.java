@@ -21,6 +21,7 @@ import com.tennisclub.ranking.repository.PlayerRankingRepository;
 import com.tennisclub.ranking.repository.PlayerRepository;
 import com.tennisclub.ranking.repository.PointTransactionRepository;
 import com.tennisclub.ranking.repository.TierWeightConfigRepository;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -73,6 +74,8 @@ public class MatchRecordingService {
 			throw new InvalidMatchException("A match cannot end in a draw");
 		}
 		MatchSide winningSide = setsWonByA > setsWonByB ? MatchSide.A : MatchSide.B;
+		int gamesWonByA = sumGames(request.sets(), true);
+		int gamesWonByB = sumGames(request.sets(), false);
 
 		Match match = new Match(request.matchType(), request.playedAt() != null ? request.playedAt() : Instant.now());
 		match.setWinningSide(winningSide);
@@ -105,15 +108,25 @@ public class MatchRecordingService {
 		int winnerTier = teamTier(winnerRankings);
 		int loserTier = teamTier(loserRankings);
 
-		TierWeightConfig tierWeightConfig = tierWeightConfigRepository
+		// winnerTierWeight rewards the winner for the upset they pulled off; loserTierWeight is
+		// looked up in the OPPOSITE direction so the loser is rewarded for how close *they* came to
+		// an upset, instead of being scaled by the favorite's low win-weight (see ScoringService).
+		TierWeightConfig winnerTierWeightConfig = tierWeightConfigRepository
 				.findByWinnerTierAndLoserTier(winnerTier, loserTier)
 				.orElseThrow(() -> new IllegalStateException(
 						"Missing tier weight configuration for winnerTier=" + winnerTier + ", loserTier=" + loserTier));
+		TierWeightConfig loserTierWeightConfig = tierWeightConfigRepository
+				.findByWinnerTierAndLoserTier(loserTier, winnerTier)
+				.orElseThrow(() -> new IllegalStateException(
+						"Missing tier weight configuration for winnerTier=" + loserTier + ", loserTier=" + winnerTier));
 
 		ScoringService.ScoringResult result = scoringService.calculate(new ScoringService.ScoringInput(
-				tierWeightConfig.getWeight(),
+				winnerTierWeightConfig.getWeight(),
+				loserTierWeightConfig.getWeight(),
 				setsWonByA > setsWonByB ? setsWonByA : setsWonByB,
 				setsWonByA > setsWonByB ? setsWonByB : setsWonByA,
+				winningSide == MatchSide.A ? gamesWonByA : gamesWonByB,
+				winningSide == MatchSide.A ? gamesWonByB : gamesWonByA,
 				rankingProperties.getBasePoints(),
 				rankingProperties.getMarginWeightCap(),
 				rankingProperties.getLoserConsolationRatio()));
@@ -121,11 +134,13 @@ public class MatchRecordingService {
 		List<PointTransaction> transactions = new ArrayList<>();
 		for (PlayerRanking ranking : winnerRankings) {
 			transactions.add(applyOutcome(
-					match, ranking, MatchOutcome.WINNER, result.winnerPointsEarned(), winnerTier, loserTier, result, tierWeightConfig));
+					match, ranking, MatchOutcome.WINNER, result.winnerPointsEarned(), winnerTier, loserTier, result,
+					winnerTierWeightConfig.getWeight()));
 		}
 		for (PlayerRanking ranking : loserRankings) {
 			transactions.add(applyOutcome(
-					match, ranking, MatchOutcome.LOSER, result.loserPointsEarned(), winnerTier, loserTier, result, tierWeightConfig));
+					match, ranking, MatchOutcome.LOSER, result.loserPointsEarned(), winnerTier, loserTier, result,
+					loserTierWeightConfig.getWeight()));
 		}
 		pointTransactionRepository.saveAll(transactions);
 
@@ -142,7 +157,7 @@ public class MatchRecordingService {
 			int winnerTier,
 			int loserTier,
 			ScoringService.ScoringResult result,
-			TierWeightConfig tierWeightConfig) {
+			BigDecimal tierWeightUsed) {
 		int pointsBefore = ranking.getPoints();
 		ranking.setPoints(pointsBefore + pointsAwarded);
 		if (role == MatchOutcome.WINNER) {
@@ -157,11 +172,11 @@ public class MatchRecordingService {
 				.matchType(match.getMatchType())
 				.role(role)
 				.basePoints(rankingProperties.getBasePoints())
-				.tierWeight(tierWeightConfig.getWeight())
+				.tierWeight(tierWeightUsed)
 				.marginWeight(result.marginWeight())
 				.winnerTierAtMatch(winnerTier)
 				.loserTierAtMatch(loserTier)
-				.setMargin(result.setMargin())
+				.gameMargin(result.gameMargin())
 				.pointsBefore(pointsBefore)
 				.pointsAfter(ranking.getPoints())
 				.pointsAwarded(pointsAwarded)
@@ -232,5 +247,9 @@ public class MatchRecordingService {
 		return (int) sets.stream()
 				.filter(set -> forTeamA ? set.teamAGames() > set.teamBGames() : set.teamBGames() > set.teamAGames())
 				.count();
+	}
+
+	private int sumGames(List<MatchSetRequest> sets, boolean forTeamA) {
+		return sets.stream().mapToInt(forTeamA ? MatchSetRequest::teamAGames : MatchSetRequest::teamBGames).sum();
 	}
 }

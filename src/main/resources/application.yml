@@ -30,7 +30,8 @@ springdoc:
 ranking:
   base-points: 100
   margin-weight-cap: 2.0
-  loser-consolation-ratio: 0.0
+  loser-consolation-ratio: 0.5
+  tier-seed-step: 300
   security:
     jwt-secret: ${RANKING_JWT_SECRET:dev-only-change-me-please-use-a-long-random-secret-32bytes-min}
     jwt-expiration-minutes: ${RANKING_JWT_EXPIRATION_MINUTES:1440}

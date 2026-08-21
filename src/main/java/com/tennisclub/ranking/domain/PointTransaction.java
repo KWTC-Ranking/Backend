@@ -60,8 +60,8 @@ public class PointTransaction {
 	@Column(name = "loser_tier_at_match", nullable = false)
 	private int loserTierAtMatch;
 
-	@Column(name = "set_margin", nullable = false)
-	private int setMargin;
+	@Column(name = "game_margin", nullable = false)
+	private int gameMargin;
 
 	@Column(name = "points_before", nullable = false)
 	private int pointsBefore;
@@ -87,7 +87,7 @@ public class PointTransaction {
 			BigDecimal marginWeight,
 			int winnerTierAtMatch,
 			int loserTierAtMatch,
-			int setMargin,
+			int gameMargin,
 			int pointsBefore,
 			int pointsAfter,
 			int pointsAwarded) {
@@ -100,7 +100,7 @@ public class PointTransaction {
 		this.marginWeight = marginWeight;
 		this.winnerTierAtMatch = winnerTierAtMatch;
 		this.loserTierAtMatch = loserTierAtMatch;
-		this.setMargin = setMargin;
+		this.gameMargin = gameMargin;
 		this.pointsBefore = pointsBefore;
 		this.pointsAfter = pointsAfter;
 		this.pointsAwarded = pointsAwarded;

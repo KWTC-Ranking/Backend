@@ -60,7 +60,7 @@ class SecurityIT extends AbstractIntegrationTest {
 		String adminToken = loginAndGetToken(securityProperties.getDefaultAdminUsername(), securityProperties.getDefaultAdminPassword());
 
 		String createMemberBody = objectMapper.writeValueAsString(
-				new PlayerCreateRequest("Regular Member", null, "regular-member", "password123", null));
+				new PlayerCreateRequest("Regular Member", null, "regular-member", "password123", null, null));
 		mockMvc.perform(post("/api/players")
 						.header("Authorization", "Bearer " + adminToken)
 						.contentType(MediaType.APPLICATION_JSON)
@@ -70,7 +70,7 @@ class SecurityIT extends AbstractIntegrationTest {
 		String memberToken = loginAndGetToken("regular-member", "password123");
 
 		String createAnotherBody =
-				objectMapper.writeValueAsString(new PlayerCreateRequest("Someone Else", null, "someone-else", "password123", null));
+				objectMapper.writeValueAsString(new PlayerCreateRequest("Someone Else", null, "someone-else", "password123", null, null));
 		mockMvc.perform(post("/api/players")
 						.header("Authorization", "Bearer " + memberToken)
 						.contentType(MediaType.APPLICATION_JSON)
@@ -121,7 +121,7 @@ class SecurityIT extends AbstractIntegrationTest {
 				loginAndGetToken(securityProperties.getDefaultAdminUsername(), securityProperties.getDefaultAdminPassword());
 
 		String createBody = objectMapper.writeValueAsString(
-				new PlayerCreateRequest("Forgetful Member", null, "forgetful-member", "original-password", null));
+				new PlayerCreateRequest("Forgetful Member", null, "forgetful-member", "original-password", null, null));
 		String createResponse = mockMvc.perform(post("/api/players")
 						.header("Authorization", "Bearer " + adminToken)
 						.contentType(MediaType.APPLICATION_JSON)
@@ -156,7 +156,7 @@ class SecurityIT extends AbstractIntegrationTest {
 				loginAndGetToken(securityProperties.getDefaultAdminUsername(), securityProperties.getDefaultAdminPassword());
 
 		String createBody =
-				objectMapper.writeValueAsString(new PlayerCreateRequest("Plain Member", null, "plain-member", "password123", null));
+				objectMapper.writeValueAsString(new PlayerCreateRequest("Plain Member", null, "plain-member", "password123", null, null));
 		mockMvc.perform(post("/api/players")
 						.header("Authorization", "Bearer " + adminToken)
 						.contentType(MediaType.APPLICATION_JSON)

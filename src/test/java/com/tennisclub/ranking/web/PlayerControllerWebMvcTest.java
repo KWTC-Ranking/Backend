@@ -3,7 +3,9 @@ package com.tennisclub.ranking.web;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -16,6 +18,7 @@ import com.tennisclub.ranking.security.JwtAuthenticationFilter;
 import com.tennisclub.ranking.domain.Player;
 import com.tennisclub.ranking.domain.PlayerRole;
 import com.tennisclub.ranking.dto.player.PlayerCreateRequest;
+import com.tennisclub.ranking.exception.PlayerDeletionNotAllowedException;
 import com.tennisclub.ranking.exception.ResourceNotFoundException;
 import com.tennisclub.ranking.service.PlayerService;
 import org.junit.jupiter.api.Test;
@@ -59,7 +62,7 @@ class PlayerControllerWebMvcTest {
 		mockMvc.perform(post("/api/players")
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(objectMapper.writeValueAsString(
-								new PlayerCreateRequest("Alice", "alice@example.com", "alice", "password123", null))))
+								new PlayerCreateRequest("Alice", "alice@example.com", "alice", "password123", null, null))))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.fullName", is("Alice")));
 	}
@@ -68,7 +71,7 @@ class PlayerControllerWebMvcTest {
 	void createPlayer_blankName_returns400() throws Exception {
 		mockMvc.perform(post("/api/players")
 						.contentType(MediaType.APPLICATION_JSON)
-						.content(objectMapper.writeValueAsString(new PlayerCreateRequest("", null, "alice", "password123", null))))
+						.content(objectMapper.writeValueAsString(new PlayerCreateRequest("", null, "alice", "password123", null, null))))
 				.andExpect(status().isBadRequest());
 	}
 
@@ -92,5 +95,19 @@ class PlayerControllerWebMvcTest {
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("{\"email\":\"not-an-email\"}"))
 				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void deletePlayer_noMatchHistory_returns204() throws Exception {
+		mockMvc.perform(delete("/api/players/1")).andExpect(status().isNoContent());
+	}
+
+	@Test
+	void deletePlayer_hasMatchHistory_returns409() throws Exception {
+		doThrow(new PlayerDeletionNotAllowedException("Player 1 has recorded match history and cannot be deleted; deactivate instead"))
+				.when(playerService)
+				.deletePlayer(1L);
+
+		mockMvc.perform(delete("/api/players/1")).andExpect(status().isConflict());
 	}
 }

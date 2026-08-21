@@ -13,4 +13,6 @@ public interface PlayerRepository extends JpaRepository<Player, Long> {
 	Optional<Player> findByUsername(String username);
 
 	boolean existsByRole(PlayerRole role);
+
+	List<Player> findByRoleNot(PlayerRole role);
 }

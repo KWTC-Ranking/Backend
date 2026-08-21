@@ -182,17 +182,35 @@ Swagger UI(`/swagger-ui.html`)에는 자물쇠("Authorize") 버튼이 있습니�
 경기가 기록될 때마다:
 
 ```
-setMargin    = setsWonByWinner - setsWonByLoser         (예: 4-0 -> 4, 4-3 -> 1)
-marginWeight = min(1 + setMargin * 0.1, ranking.margin-weight-cap)   (기본 cap 2.0)
-tierWeight   = lookup(tier_weight_config, winnerTier, loserTier)     (관리자가 조정 가능, 시드된 4x4 매트릭스)
-winnerPoints = round(ranking.base-points * tierWeight * marginWeight)
-loserPoints  = round(winnerPoints * ranking.loser-consolation-ratio) (기본 비율 0 -> 패자는 0점)
+gameMargin       = gamesWonByWinner - gamesWonByLoser   (그 경기에서 이긴/진 쪽이 딴 전체 게임 수 차이)
+marginWeight     = min(1 + gameMargin * 0.1, ranking.margin-weight-cap)   (기본 cap 2.0, 최소 1.0)
+winnerTierWeight = lookup(tier_weight_config, winnerTier, loserTier)     (관리자가 조정 가능, 시드된 4x4 매트릭스)
+loserTierWeight  = lookup(tier_weight_config, loserTier, winnerTier)    (winnerTierWeight와 반대 방향 조회)
+winnerPoints     = round(ranking.base-points * winnerTierWeight * marginWeight)
+loserGameShare   = gamesWonByLoser / (gamesWonByWinner + gamesWonByLoser)
+loserPoints      = round(ranking.base-points * loserTierWeight * loserGameShare * ranking.loser-consolation-ratio)
 ```
 
-- 티어(1이 최상위, 4가 최하위)는 **수동으로 지정하지 않습니다**. 매 경기 후, 같은 종목(단식/복식은
-  완전히 별도로 관리)의 전체 선수를 점수순으로 재정렬해서 4분위로 다시 나눕니다.
-- 새로 추가된 선수는 해당 종목에서 첫 경기를 치르기 전까지는 랭킹 row 자체가 없습니다. 첫 경기를
-  치르면 0점 / 티어 4로 시작합니다.
+- 패자의 티어가중치는 승자와 **반대 방향**으로 조회합니다. 예를 들어 3티어가 1티어 상대로 3-4로
+  아깝게 지면, "1티어가 3티어를 이겼다"는 낮은 가중치(`lookup(1,3)`, 이변 아님)가 아니라 "3티어가
+  1티어를 이겼다면 받았을" 높은 가중치(`lookup(3,1)`, 이변)를 패자 콘솔레이션 점수에 적용합니다.
+  승자의 가중치를 그대로 재사용하면 언더독이 강자를 거의 이길 뻔한 선전을 오히려 깎아먹는
+  구조가 되기 때문입니다.
+
+- 마진과 패자 점수는 **세트 수가 아니라 게임 수** 기준입니다. 이 앱의 실제 사용 패턴상 한 경기에
+  세트를 하나만 기록하는 경우가 많은데, 그러면 `setsWonByWinner/setsWonByLoser`는 항상 1-0이라
+  세트 기준으로는 마진 보너스도 고정값이 되고 패자는 세트를 하나도 못 따서 항상 0점이 되는 문제가
+  있었습니다. 게임 수를 쓰면 세트가 몇 개든 상관없이 실제 스코어 차이를 반영합니다 — 예를 들어
+  단식 한 세트를 4-0으로 완패하면 `loserGameShare`가 0이라 비율(기본 0.5)과 무관하게 무조건
+  0점이고, 4-3처럼 접전 끝에 지면 딴 게임 수만큼 더 받습니다. `ranking.loser-consolation-ratio`를
+  0으로 두면 승자 독식(패자는 항상 0점) 방식으로 되돌릴 수 있습니다.
+- 티어(1이 최상위, 4가 최하위)는 기본적으로 **수동으로 지정하지 않습니다**. 매 경기 후, 같은
+  종목(단식/복식은 완전히 별도로 관리)의 전체 선수를 점수순으로 재정렬해서 4분위로 다시 나눕니다.
+- 새로 추가된 선수는 관리자가 회원 추가 시 시작 티어(1~4)를 직접 고를 수 있습니다. 고른 티어에
+  비례하는 초기 점수(`(4 - tier) * ranking.tier-seed-step`, 기본 300점 단위)를 함께 부여해서 다음
+  번 티어 재계산 때 대략 그 위치에 자리잡게 합니다 — 다만 이후 실제 경기 결과가 쌓이면 점수 기준으로
+  자연스럽게 재조정됩니다. 시작 티어를 지정하지 않으면 기존처럼 해당 종목에서 첫 경기를 치르기
+  전까지는 랭킹 row 자체가 없다가, 첫 경기를 치르면 0점 / 티어 4로 시작합니다.
 - 복식 랭킹은 (매 경기 파트너가 바뀌므로) 고정 팀이 아니라 개인별로 집계됩니다. 복식 경기의 점수
   계산에 쓰이는 "팀 티어"는 두 파트너 티어의 평균(반올림)이며, 이긴 팀의 두 파트너는 각각
   `winnerPoints` 전액을 받습니다 (나누지 않음).

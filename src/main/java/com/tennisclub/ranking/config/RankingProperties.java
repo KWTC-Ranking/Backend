@@ -17,8 +17,24 @@ public class RankingProperties {
 	@DecimalMin(value = "1.0")
 	private BigDecimal marginWeightCap = new BigDecimal("2.0");
 
+	/**
+	 * Loser points = basePoints * tierWeight * (setsWonByLoser / totalSets) * this ratio — a
+	 * shutout loss (0 sets won) always earns 0 regardless of this value; a close loss earns a
+	 * meaningful fraction of what the winner got.
+	 */
 	@PositiveOrZero
-	private BigDecimal loserConsolationRatio = BigDecimal.ZERO;
+	private BigDecimal loserConsolationRatio = new BigDecimal("0.5");
+
+	/**
+	 * Points-per-tier-step used to seed a brand-new player's initial points when an admin
+	 * manually picks their starting tier (1=best..4=weakest) at creation time, instead of
+	 * leaving them at the tier-4/0-point default. Seed points = (4 - tier) * tierSeedStep, so a
+	 * tier-1 pick starts 3 steps above tier 4. This is a soft prior, not a pin: the next
+	 * TierRecalculationService pass for that discipline re-sorts everyone by points as usual, so
+	 * real match results gradually override the seed.
+	 */
+	@PositiveOrZero
+	private int tierSeedStep = 300;
 
 	public int getBasePoints() {
 		return basePoints;
@@ -42,5 +58,13 @@ public class RankingProperties {
 
 	public void setLoserConsolationRatio(BigDecimal loserConsolationRatio) {
 		this.loserConsolationRatio = loserConsolationRatio;
+	}
+
+	public int getTierSeedStep() {
+		return tierSeedStep;
+	}
+
+	public void setTierSeedStep(int tierSeedStep) {
+		this.tierSeedStep = tierSeedStep;
 	}
 }
