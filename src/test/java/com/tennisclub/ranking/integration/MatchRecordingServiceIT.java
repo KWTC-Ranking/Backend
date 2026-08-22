@@ -10,6 +10,7 @@ import com.tennisclub.ranking.domain.PlayerRole;
 import com.tennisclub.ranking.domain.PlayerRanking;
 import com.tennisclub.ranking.dto.match.MatchRecordRequest;
 import com.tennisclub.ranking.dto.match.MatchResponse;
+import com.tennisclub.ranking.dto.match.MatchScoreCorrectionRequest;
 import com.tennisclub.ranking.dto.match.MatchSetRequest;
 import com.tennisclub.ranking.dto.match.MatchTeamRequest;
 import com.tennisclub.ranking.exception.InvalidMatchException;
@@ -17,6 +18,8 @@ import com.tennisclub.ranking.repository.PlayerRankingRepository;
 import com.tennisclub.ranking.repository.PlayerRepository;
 import com.tennisclub.ranking.repository.PointTransactionRepository;
 import com.tennisclub.ranking.service.MatchRecordingService;
+import com.tennisclub.ranking.service.PlayerService;
+import jakarta.persistence.EntityManager;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +30,12 @@ class MatchRecordingServiceIT extends AbstractIntegrationTest {
 
 	@Autowired
 	private MatchRecordingService matchRecordingService;
+
+	@Autowired
+	private PlayerService playerService;
+
+	@Autowired
+	private EntityManager entityManager;
 
 	@Autowired
 	private PlayerRepository playerRepository;
@@ -200,6 +209,121 @@ class MatchRecordingServiceIT extends AbstractIntegrationTest {
 
 		PlayerRanking strongRanking = playerRankingRepository.findByPlayerIdAndMatchType(strong.getId(), MatchType.SINGLES).orElseThrow();
 		assertThat(strongRanking.getTier()).isEqualTo(1);
+	}
+
+	@Test
+	void correctScore_fixesPointsWithoutChangingWinner() {
+		Player winner = player("FixWinner");
+		Player loser = player("FixLoser");
+
+		MatchResponse original = matchRecordingService.recordMatch(new MatchRecordRequest(
+				MatchType.SINGLES,
+				null,
+				List.of(new MatchTeamRequest(MatchSide.A, List.of(winner.getId())), new MatchTeamRequest(MatchSide.B, List.of(loser.getId()))),
+				List.of(new MatchSetRequest(1, 4, 0), new MatchSetRequest(2, 4, 0))));
+
+		// same winner, but a much closer scoreline -- the loser should now earn some consolation points
+		matchRecordingService.correctScore(
+				original.id(),
+				new MatchScoreCorrectionRequest(List.of(new MatchSetRequest(1, 4, 3), new MatchSetRequest(2, 4, 2))));
+
+		PlayerRanking winnerRanking =
+				playerRankingRepository.findByPlayerIdAndMatchType(winner.getId(), MatchType.SINGLES).orElseThrow();
+		PlayerRanking loserRanking =
+				playerRankingRepository.findByPlayerIdAndMatchType(loser.getId(), MatchType.SINGLES).orElseThrow();
+
+		assertThat(winnerRanking.getWins()).isEqualTo(1);
+		assertThat(loserRanking.getLosses()).isEqualTo(1);
+		assertThat(loserRanking.getPoints()).isGreaterThan(0);
+		assertThat(pointTransactionRepository.findByMatchId(original.id())).hasSize(2);
+	}
+
+	@Test
+	void correctScore_reversedOutcome_flipsWinnerAndRankings() {
+		Player playerA = player("FlipA");
+		Player playerB = player("FlipB");
+
+		MatchResponse original = matchRecordingService.recordMatch(new MatchRecordRequest(
+				MatchType.SINGLES,
+				null,
+				List.of(new MatchTeamRequest(MatchSide.A, List.of(playerA.getId())), new MatchTeamRequest(MatchSide.B, List.of(playerB.getId()))),
+				List.of(new MatchSetRequest(1, 4, 0), new MatchSetRequest(2, 4, 0))));
+		assertThat(original.winningSide()).isEqualTo(MatchSide.A);
+
+		// the score was actually the other way around
+		MatchResponse corrected = matchRecordingService.correctScore(
+				original.id(),
+				new MatchScoreCorrectionRequest(List.of(new MatchSetRequest(1, 0, 4), new MatchSetRequest(2, 0, 4))));
+		assertThat(corrected.winningSide()).isEqualTo(MatchSide.B);
+
+		PlayerRanking aRanking = playerRankingRepository.findByPlayerIdAndMatchType(playerA.getId(), MatchType.SINGLES).orElseThrow();
+		PlayerRanking bRanking = playerRankingRepository.findByPlayerIdAndMatchType(playerB.getId(), MatchType.SINGLES).orElseThrow();
+
+		assertThat(aRanking.getWins()).isZero();
+		assertThat(aRanking.getLosses()).isEqualTo(1);
+		assertThat(bRanking.getWins()).isEqualTo(1);
+		assertThat(bRanking.getLosses()).isZero();
+	}
+
+	@Test
+	void correctScore_matchNotFound_throws() {
+		assertThatThrownBy(() -> matchRecordingService.correctScore(
+						999_999L, new MatchScoreCorrectionRequest(List.of(new MatchSetRequest(1, 4, 0)))))
+				.isInstanceOf(com.tennisclub.ranking.exception.ResourceNotFoundException.class);
+	}
+
+	@Test
+	void correctScore_participantWasDeleted_isRejected() {
+		Player winner = player("DeletedParticipantWinner");
+		Player loser = player("DeletedParticipantLoser");
+
+		MatchResponse original = matchRecordingService.recordMatch(new MatchRecordRequest(
+				MatchType.SINGLES,
+				null,
+				List.of(new MatchTeamRequest(MatchSide.A, List.of(winner.getId())), new MatchTeamRequest(MatchSide.B, List.of(loser.getId()))),
+				List.of(new MatchSetRequest(1, 4, 0), new MatchSetRequest(2, 4, 0))));
+
+		playerService.deletePlayer(loser.getId());
+		// The delete's DB-level ON DELETE SET NULL isn't visible to already-loaded entities still
+		// sitting in this test's shared persistence context (see AbstractIntegrationTest -- the
+		// whole test method runs in one transaction); clear it so correctScore does a fresh load,
+		// matching what a real second HTTP request would see.
+		entityManager.flush();
+		entityManager.clear();
+
+		assertThatThrownBy(() -> matchRecordingService.correctScore(
+						original.id(), new MatchScoreCorrectionRequest(List.of(new MatchSetRequest(1, 4, 3)))))
+				.isInstanceOf(InvalidMatchException.class);
+	}
+
+	@Test
+	void deleteMatch_undoesPointsAndRemovesTheMatch() {
+		Player winner = player("DeleteMatchWinner");
+		Player loser = player("DeleteMatchLoser");
+
+		MatchResponse recorded = matchRecordingService.recordMatch(new MatchRecordRequest(
+				MatchType.SINGLES,
+				null,
+				List.of(new MatchTeamRequest(MatchSide.A, List.of(winner.getId())), new MatchTeamRequest(MatchSide.B, List.of(loser.getId()))),
+				List.of(new MatchSetRequest(1, 4, 2))));
+
+		matchRecordingService.deleteMatch(recorded.id());
+
+		PlayerRanking winnerRanking =
+				playerRankingRepository.findByPlayerIdAndMatchType(winner.getId(), MatchType.SINGLES).orElseThrow();
+		PlayerRanking loserRanking =
+				playerRankingRepository.findByPlayerIdAndMatchType(loser.getId(), MatchType.SINGLES).orElseThrow();
+
+		assertThat(winnerRanking.getPoints()).isZero();
+		assertThat(winnerRanking.getWins()).isZero();
+		assertThat(loserRanking.getLosses()).isZero();
+		assertThat(pointTransactionRepository.findByMatchId(recorded.id())).isEmpty();
+	}
+
+	@Test
+	void deleteMatch_notFound_throws() {
+		assertThatThrownBy(() -> matchRecordingService.deleteMatch(999_999L))
+				.isInstanceOf(com.tennisclub.ranking.exception.ResourceNotFoundException.class);
 	}
 
 	private void recordSinglesWin(Player winner, Player loser) {

@@ -6,6 +6,7 @@ import com.tennisclub.ranking.domain.MatchOutcome;
 import com.tennisclub.ranking.domain.MatchSet;
 import com.tennisclub.ranking.domain.MatchSide;
 import com.tennisclub.ranking.domain.MatchTeam;
+import com.tennisclub.ranking.domain.MatchTeamPlayer;
 import com.tennisclub.ranking.domain.MatchType;
 import com.tennisclub.ranking.domain.Player;
 import com.tennisclub.ranking.domain.PlayerRanking;
@@ -13,9 +14,11 @@ import com.tennisclub.ranking.domain.PointTransaction;
 import com.tennisclub.ranking.domain.TierWeightConfig;
 import com.tennisclub.ranking.dto.match.MatchRecordRequest;
 import com.tennisclub.ranking.dto.match.MatchResponse;
+import com.tennisclub.ranking.dto.match.MatchScoreCorrectionRequest;
 import com.tennisclub.ranking.dto.match.MatchSetRequest;
 import com.tennisclub.ranking.dto.match.MatchTeamRequest;
 import com.tennisclub.ranking.exception.InvalidMatchException;
+import com.tennisclub.ranking.exception.ResourceNotFoundException;
 import com.tennisclub.ranking.repository.MatchRepository;
 import com.tennisclub.ranking.repository.PlayerRankingRepository;
 import com.tennisclub.ranking.repository.PlayerRepository;
@@ -147,6 +150,160 @@ public class MatchRecordingService {
 		tierRecalculationService.recalculateTiers(request.matchType());
 
 		return MatchResponse.from(match, transactions);
+	}
+
+	/**
+	 * Corrects a mistakenly entered set score for an already-recorded match. Teams/players cannot
+	 * change (only the sets), but the winning side can flip if the correction reverses the outcome.
+	 *
+	 * The old point award is undone (points/wins/losses subtracted back out) and a fresh one is
+	 * applied using each player's CURRENT tier — not the tier at the original match time — since
+	 * that's the only tier snapshot the system keeps live. For a club-sized dataset corrections are
+	 * expected to happen shortly after the mistake, so this is a reasonable approximation.
+	 */
+	@Transactional
+	public MatchResponse correctScore(Long matchId, MatchScoreCorrectionRequest request) {
+		Match match = matchRepository
+				.findByIdWithDetails(matchId)
+				.orElseThrow(() -> new ResourceNotFoundException("Match " + matchId + " not found"));
+
+		validateSets(request.sets());
+		int newSetsWonByA = countSetsWon(request.sets(), true);
+		int newSetsWonByB = countSetsWon(request.sets(), false);
+		if (newSetsWonByA == newSetsWonByB) {
+			throw new InvalidMatchException("A match cannot end in a draw");
+		}
+		MatchSide newWinningSide = newSetsWonByA > newSetsWonByB ? MatchSide.A : MatchSide.B;
+		int newGamesWonByA = sumGames(request.sets(), true);
+		int newGamesWonByB = sumGames(request.sets(), false);
+
+		MatchTeam teamA = findTeam(match, MatchSide.A);
+		MatchTeam teamB = findTeam(match, MatchSide.B);
+		if (hasDeletedPlayer(teamA) || hasDeletedPlayer(teamB)) {
+			throw new InvalidMatchException(
+					"Match " + matchId + " has a deleted participant and its score can no longer be corrected");
+		}
+
+		List<PointTransaction> oldTransactions = pointTransactionRepository.findByMatchId(matchId);
+		for (PointTransaction oldTransaction : oldTransactions) {
+			PlayerRanking ranking = playerRankingRepository
+					.findByPlayerIdAndMatchType(oldTransaction.getPlayer().getId(), match.getMatchType())
+					.orElseThrow(() -> new IllegalStateException(
+							"Ranking missing for player " + oldTransaction.getPlayer().getId() + " while correcting match " + matchId));
+			ranking.setPoints(ranking.getPoints() - oldTransaction.getPointsAwarded());
+			if (oldTransaction.getRole() == MatchOutcome.WINNER) {
+				ranking.setWins(ranking.getWins() - 1);
+			} else {
+				ranking.setLosses(ranking.getLosses() - 1);
+			}
+		}
+		pointTransactionRepository.deleteAll(oldTransactions);
+
+		// Flush the removal before re-adding: otherwise Hibernate can order the new sets' INSERTs
+		// before the old sets' DELETEs within the same flush and trip the (match_id, set_number)
+		// unique constraint when a set number is reused.
+		match.getSets().clear();
+		matchRepository.flush();
+		int setNumber = 1;
+		for (MatchSetRequest setRequest : request.sets()) {
+			match.addSet(new MatchSet(setNumber++, setRequest.teamAGames(), setRequest.teamBGames()));
+		}
+		match.setWinningSide(newWinningSide);
+		teamA.setSetsWon(newSetsWonByA);
+		teamB.setSetsWon(newSetsWonByB);
+
+		MatchTeam winningTeam = newWinningSide == MatchSide.A ? teamA : teamB;
+		MatchTeam losingTeam = newWinningSide == MatchSide.A ? teamB : teamA;
+
+		List<PlayerRanking> winnerRankings = findOrCreateRankings(
+				winningTeam.getPlayers().stream().map(MatchTeamPlayer::getPlayer).toList(), match.getMatchType());
+		List<PlayerRanking> loserRankings = findOrCreateRankings(
+				losingTeam.getPlayers().stream().map(MatchTeamPlayer::getPlayer).toList(), match.getMatchType());
+
+		int winnerTier = teamTier(winnerRankings);
+		int loserTier = teamTier(loserRankings);
+
+		TierWeightConfig winnerTierWeightConfig = tierWeightConfigRepository
+				.findByWinnerTierAndLoserTier(winnerTier, loserTier)
+				.orElseThrow(() -> new IllegalStateException(
+						"Missing tier weight configuration for winnerTier=" + winnerTier + ", loserTier=" + loserTier));
+		TierWeightConfig loserTierWeightConfig = tierWeightConfigRepository
+				.findByWinnerTierAndLoserTier(loserTier, winnerTier)
+				.orElseThrow(() -> new IllegalStateException(
+						"Missing tier weight configuration for winnerTier=" + loserTier + ", loserTier=" + winnerTier));
+
+		ScoringService.ScoringResult result = scoringService.calculate(new ScoringService.ScoringInput(
+				winnerTierWeightConfig.getWeight(),
+				loserTierWeightConfig.getWeight(),
+				newSetsWonByA > newSetsWonByB ? newSetsWonByA : newSetsWonByB,
+				newSetsWonByA > newSetsWonByB ? newSetsWonByB : newSetsWonByA,
+				newWinningSide == MatchSide.A ? newGamesWonByA : newGamesWonByB,
+				newWinningSide == MatchSide.A ? newGamesWonByB : newGamesWonByA,
+				rankingProperties.getBasePoints(),
+				rankingProperties.getMarginWeightCap(),
+				rankingProperties.getLoserConsolationRatio()));
+
+		List<PointTransaction> newTransactions = new ArrayList<>();
+		for (PlayerRanking ranking : winnerRankings) {
+			newTransactions.add(applyOutcome(
+					match, ranking, MatchOutcome.WINNER, result.winnerPointsEarned(), winnerTier, loserTier, result,
+					winnerTierWeightConfig.getWeight()));
+		}
+		for (PlayerRanking ranking : loserRankings) {
+			newTransactions.add(applyOutcome(
+					match, ranking, MatchOutcome.LOSER, result.loserPointsEarned(), winnerTier, loserTier, result,
+					loserTierWeightConfig.getWeight()));
+		}
+		pointTransactionRepository.saveAll(newTransactions);
+
+		tierRecalculationService.recalculateTiers(match.getMatchType());
+
+		return MatchResponse.from(match, newTransactions);
+	}
+
+	/**
+	 * Permanently deletes a mistakenly recorded match. The points/wins/losses it awarded are
+	 * undone for every participant who still has a live account (a participant whose account was
+	 * since deleted has no ranking left to undo — see PlayerService.deletePlayer). The match row
+	 * itself, its teams/sets, and its point transactions are removed by the DB's ON DELETE CASCADE
+	 * (see V1__init_schema.sql) once matchRepository.delete(match) runs.
+	 */
+	@Transactional
+	public void deleteMatch(Long matchId) {
+		Match match = matchRepository
+				.findByIdWithDetails(matchId)
+				.orElseThrow(() -> new ResourceNotFoundException("Match " + matchId + " not found"));
+
+		for (PointTransaction transaction : pointTransactionRepository.findByMatchId(matchId)) {
+			if (transaction.getPlayer() == null) {
+				continue;
+			}
+			playerRankingRepository
+					.findByPlayerIdAndMatchType(transaction.getPlayer().getId(), match.getMatchType())
+					.ifPresent(ranking -> {
+						ranking.setPoints(ranking.getPoints() - transaction.getPointsAwarded());
+						if (transaction.getRole() == MatchOutcome.WINNER) {
+							ranking.setWins(ranking.getWins() - 1);
+						} else {
+							ranking.setLosses(ranking.getLosses() - 1);
+						}
+					});
+		}
+
+		MatchType matchType = match.getMatchType();
+		matchRepository.delete(match);
+		tierRecalculationService.recalculateTiers(matchType);
+	}
+
+	private MatchTeam findTeam(Match match, MatchSide side) {
+		return match.getTeams().stream()
+				.filter(team -> team.getSide() == side)
+				.findFirst()
+				.orElseThrow(() -> new IllegalStateException("Match " + match.getId() + " is missing team " + side));
+	}
+
+	private boolean hasDeletedPlayer(MatchTeam team) {
+		return team.getPlayers().stream().anyMatch(tp -> tp.getPlayer() == null);
 	}
 
 	private PointTransaction applyOutcome(

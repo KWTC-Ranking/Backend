@@ -1,8 +1,13 @@
 package com.tennisclub.ranking.web;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -12,8 +17,10 @@ import com.tennisclub.ranking.domain.MatchSide;
 import com.tennisclub.ranking.domain.MatchType;
 import com.tennisclub.ranking.dto.match.MatchRecordRequest;
 import com.tennisclub.ranking.dto.match.MatchResponse;
+import com.tennisclub.ranking.dto.match.MatchScoreCorrectionRequest;
 import com.tennisclub.ranking.dto.match.MatchSetRequest;
 import com.tennisclub.ranking.dto.match.MatchTeamRequest;
+import com.tennisclub.ranking.exception.ResourceNotFoundException;
 import com.tennisclub.ranking.repository.MatchRepository;
 import com.tennisclub.ranking.repository.PointTransactionRepository;
 import com.tennisclub.ranking.service.MatchRecordingService;
@@ -89,5 +96,40 @@ class MatchControllerWebMvcTest {
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(objectMapper.writeValueAsString(request)))
 				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void correctScore_valid_returns200() throws Exception {
+		MatchScoreCorrectionRequest request = new MatchScoreCorrectionRequest(List.of(new MatchSetRequest(1, 4, 3)));
+
+		when(matchRecordingService.correctScore(anyLong(), any()))
+				.thenReturn(new MatchResponse(1L, MatchType.SINGLES, null, MatchSide.A, List.of(), List.of(), List.of()));
+
+		mockMvc.perform(put("/api/matches/1")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(request)))
+				.andExpect(status().isOk());
+	}
+
+	@Test
+	void correctScore_emptySets_returns400() throws Exception {
+		mockMvc.perform(put("/api/matches/1")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"sets\":[]}"))
+				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void deleteMatch_returns204() throws Exception {
+		doNothing().when(matchRecordingService).deleteMatch(1L);
+
+		mockMvc.perform(delete("/api/matches/1")).andExpect(status().isNoContent());
+	}
+
+	@Test
+	void deleteMatch_notFound_returns404() throws Exception {
+		doThrow(new ResourceNotFoundException("Match 99 not found")).when(matchRecordingService).deleteMatch(99L);
+
+		mockMvc.perform(delete("/api/matches/99")).andExpect(status().isNotFound());
 	}
 }

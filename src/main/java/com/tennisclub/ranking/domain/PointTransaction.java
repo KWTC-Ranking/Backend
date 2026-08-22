@@ -29,8 +29,9 @@ public class PointTransaction {
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
+	/** Nullable: set to NULL when the player is permanently deleted (see MatchTeamPlayer.player). */
 	@ManyToOne(fetch = FetchType.LAZY)
-	@JoinColumn(name = "player_id", nullable = false)
+	@JoinColumn(name = "player_id")
 	private Player player;
 
 	@ManyToOne(fetch = FetchType.LAZY)

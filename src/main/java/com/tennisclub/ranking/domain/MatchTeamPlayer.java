@@ -31,8 +31,13 @@ public class MatchTeamPlayer {
 	@JoinColumn(name = "match_team_id", nullable = false)
 	private MatchTeam matchTeam;
 
+	/**
+	 * Nullable: set to NULL (ON DELETE SET NULL, see V5__nullable_player_on_deletion.sql) when the
+	 * player is permanently deleted, so the match and everyone else's points survive instead of
+	 * being blocked or cascaded away. A null player renders as "(탈퇴한 회원)" in API responses.
+	 */
 	@ManyToOne(fetch = FetchType.LAZY)
-	@JoinColumn(name = "player_id", nullable = false)
+	@JoinColumn(name = "player_id")
 	private Player player;
 
 	public MatchTeamPlayer(Player player) {

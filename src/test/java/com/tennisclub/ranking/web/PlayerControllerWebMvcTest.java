@@ -3,7 +3,6 @@ package com.tennisclub.ranking.web;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -18,7 +17,6 @@ import com.tennisclub.ranking.security.JwtAuthenticationFilter;
 import com.tennisclub.ranking.domain.Player;
 import com.tennisclub.ranking.domain.PlayerRole;
 import com.tennisclub.ranking.dto.player.PlayerCreateRequest;
-import com.tennisclub.ranking.exception.PlayerDeletionNotAllowedException;
 import com.tennisclub.ranking.exception.ResourceNotFoundException;
 import com.tennisclub.ranking.service.PlayerService;
 import org.junit.jupiter.api.Test;
@@ -98,16 +96,7 @@ class PlayerControllerWebMvcTest {
 	}
 
 	@Test
-	void deletePlayer_noMatchHistory_returns204() throws Exception {
+	void deletePlayer_returns204() throws Exception {
 		mockMvc.perform(delete("/api/players/1")).andExpect(status().isNoContent());
-	}
-
-	@Test
-	void deletePlayer_hasMatchHistory_returns409() throws Exception {
-		doThrow(new PlayerDeletionNotAllowedException("Player 1 has recorded match history and cannot be deleted; deactivate instead"))
-				.when(playerService)
-				.deletePlayer(1L);
-
-		mockMvc.perform(delete("/api/players/1")).andExpect(status().isConflict());
 	}
 }

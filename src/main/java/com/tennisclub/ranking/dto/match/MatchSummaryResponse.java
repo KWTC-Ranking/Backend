@@ -5,10 +5,11 @@ import com.tennisclub.ranking.domain.MatchSide;
 import com.tennisclub.ranking.domain.MatchTeam;
 import com.tennisclub.ranking.domain.MatchType;
 import java.time.Instant;
-import java.util.Comparator;
 
 public record MatchSummaryResponse(
 		Long id, MatchType matchType, Instant playedAt, MatchSide winningSide, String teamASummary, String teamBSummary) {
+
+	private static final String DELETED_PLAYER_LABEL = "(탈퇴한 회원)";
 
 	public static MatchSummaryResponse from(Match match) {
 		String teamA = summarize(match, MatchSide.A);
@@ -26,8 +27,8 @@ public record MatchSummaryResponse(
 
 	private static String describeTeam(MatchTeam team) {
 		String names = team.getPlayers().stream()
-				.sorted(Comparator.comparing(tp -> tp.getPlayer().getFullName()))
-				.map(tp -> tp.getPlayer().getFullName())
+				.map(tp -> tp.getPlayer() != null ? tp.getPlayer().getFullName() : DELETED_PLAYER_LABEL)
+				.sorted()
 				.reduce((a, b) -> a + " / " + b)
 				.orElse("");
 		return names + " (" + team.getSetsWon() + " sets)";

@@ -4,6 +4,7 @@ import com.tennisclub.ranking.domain.Match;
 import com.tennisclub.ranking.domain.MatchType;
 import com.tennisclub.ranking.dto.match.MatchRecordRequest;
 import com.tennisclub.ranking.dto.match.MatchResponse;
+import com.tennisclub.ranking.dto.match.MatchScoreCorrectionRequest;
 import com.tennisclub.ranking.dto.match.MatchSummaryResponse;
 import com.tennisclub.ranking.exception.ResourceNotFoundException;
 import com.tennisclub.ranking.repository.MatchRepository;
@@ -14,10 +15,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -58,5 +62,18 @@ public class MatchController {
 				.findByIdWithDetails(id)
 				.orElseThrow(() -> new ResourceNotFoundException("Match " + id + " not found"));
 		return MatchResponse.from(match, pointTransactionRepository.findByMatchId(id));
+	}
+
+	/** Admin-only: corrects a mistakenly entered set score. Teams/players cannot be changed. */
+	@PutMapping("/{id}")
+	public MatchResponse correctScore(@PathVariable Long id, @Valid @RequestBody MatchScoreCorrectionRequest request) {
+		return matchRecordingService.correctScore(id, request);
+	}
+
+	/** Admin-only: permanently deletes a mistakenly recorded match and undoes the points it awarded. */
+	@DeleteMapping("/{id}")
+	public ResponseEntity<Void> deleteMatch(@PathVariable Long id) {
+		matchRecordingService.deleteMatch(id);
+		return ResponseEntity.noContent().build();
 	}
 }

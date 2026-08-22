@@ -109,6 +109,47 @@ docker compose logs -f caddy
 로그에 인증서 발급 성공 메시지가 보이면 완료입니다. `https://ranking.kwtc.example`로 접속해서
 로그인 → 리더보드까지 확인하세요.
 
+## 9. 자동 백업
+
+`deploy/backup.sh`가 `ranking-postgres` 컨테이너를 `pg_dump`로 덤프해서 `~/backups/`에
+gzip으로 저장하고, 14일 지난 백업은 자동으로 지웁니다. 볼륨 안이 아니라 홈 디렉터리에 저장하므로
+`docker compose down -v`를 실수로 돌려도 백업은 남습니다.
+
+```
+chmod +x ~/Backend/deploy/backup.sh
+mkdir -p ~/backups
+~/Backend/deploy/backup.sh   # 한 번 수동 실행해서 정상 동작 확인
+ls -lh ~/backups
+```
+
+매일 새벽 4시에 자동 실행되도록 cron 등록:
+
+```
+crontab -e
+```
+
+아래 한 줄 추가:
+
+```
+0 4 * * * /home/ubuntu/Backend/deploy/backup.sh >> /home/ubuntu/backups/backup.log 2>&1
+```
+
+(`ubuntu`는 실제 로그인 사용자명으로, 경로는 `git clone`한 실제 위치로 맞추세요. `whoami`, `pwd`로 확인.)
+
+**복구 방법** (백업 파일 하나를 통째로 복원):
+
+```
+gunzip -c ~/backups/ranking-20260101-040000.sql.gz | docker exec -i ranking-postgres psql -U ranking -d ranking
+```
+
+**더 안전하게 하려면**: `~/backups/`도 결국 같은 EC2 인스턴스 안이라, 인스턴스/EBS 자체가
+통째로 날아가는 상황(드묾)까지는 못 막습니다. 가끔 한 번씩 로컬 PC로 내려받아두면 완전히
+별도 위치에 사본이 생깁니다:
+
+```
+scp -i <pem 파일> ubuntu@<서버 IP>:~/backups/ranking-*.sql.gz .
+```
+
 ## 재배포
 
 **백엔드 코드 변경 시**:
@@ -134,6 +175,5 @@ docker compose up -d --build
 - [ ] DNS A 레코드 두 개 다 전파됐는지 (`dig`로 확인)
 - [ ] `.env` 세 개(Backend, Frontend, deploy) 전부 실제 값으로 채웠는지, 특히 관리자 비밀번호를
       기본값에서 바꿨는지
-- [ ] `ranking-pgdata` 볼륨 백업 방법을 정했는지 (`docker exec ranking-postgres pg_dump ...`를
-      cron으로 돌리는 정도면 충분)
+- [ ] `deploy/backup.sh`를 cron에 등록했는지 (9번 참고)
 - [ ] 첫 배포 후 관리자로 로그인해서 비밀번호를 바로 바꿨는지

@@ -8,7 +8,6 @@ import com.tennisclub.ranking.domain.PlayerRole;
 import com.tennisclub.ranking.dto.player.PlayerCreateRequest;
 import com.tennisclub.ranking.dto.player.PlayerUpdateRequest;
 import com.tennisclub.ranking.dto.ranking.PointHistoryEntryResponse;
-import com.tennisclub.ranking.exception.PlayerDeletionNotAllowedException;
 import com.tennisclub.ranking.exception.ResourceNotFoundException;
 import com.tennisclub.ranking.repository.PlayerRankingRepository;
 import com.tennisclub.ranking.repository.PlayerRepository;
@@ -88,23 +87,23 @@ public class PlayerService {
 		if (request.active() != null) {
 			player.setActive(request.active());
 		}
+		if (request.role() != null) {
+			player.setRole(request.role());
+		}
 		return player;
 	}
 
 	/**
-	 * Hard delete — only for players with no recorded match history (e.g. a test/mistaken
-	 * account). A PlayerRanking row only exists once a player has played a match (see
-	 * MatchRecordingService), so its presence is what we use to detect real history.
-	 * Players who have played should be deactivated instead, not deleted, since their matches
-	 * still need to reference a valid player.
+	 * Permanently deletes a player, including one with recorded match history. Their own
+	 * PlayerRanking rows are removed here; their references on past matches (MatchTeamPlayer,
+	 * PointTransaction) are set to NULL by the DB (ON DELETE SET NULL, see
+	 * V5__nullable_player_on_deletion.sql) instead of being blocked or cascaded away, so
+	 * opponents/partners keep their own wins, losses and points from those matches.
 	 */
 	@Transactional
 	public void deletePlayer(Long id) {
 		Player player = getPlayer(id);
-		if (!playerRankingRepository.findByPlayerId(id).isEmpty()) {
-			throw new PlayerDeletionNotAllowedException(
-					"Player " + id + " has recorded match history and cannot be deleted; deactivate instead");
-		}
+		playerRankingRepository.deleteAll(playerRankingRepository.findByPlayerId(id));
 		playerRepository.delete(player);
 	}
 
