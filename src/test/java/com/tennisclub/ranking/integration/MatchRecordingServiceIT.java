@@ -13,10 +13,13 @@ import com.tennisclub.ranking.dto.match.MatchResponse;
 import com.tennisclub.ranking.dto.match.MatchScoreCorrectionRequest;
 import com.tennisclub.ranking.dto.match.MatchSetRequest;
 import com.tennisclub.ranking.dto.match.MatchTeamRequest;
+import com.tennisclub.ranking.domain.SeasonState;
 import com.tennisclub.ranking.exception.InvalidMatchException;
+import com.tennisclub.ranking.exception.SeasonClosedException;
 import com.tennisclub.ranking.repository.PlayerRankingRepository;
 import com.tennisclub.ranking.repository.PlayerRepository;
 import com.tennisclub.ranking.repository.PointTransactionRepository;
+import com.tennisclub.ranking.repository.SeasonStateRepository;
 import com.tennisclub.ranking.service.MatchRecordingService;
 import com.tennisclub.ranking.service.PlayerService;
 import jakarta.persistence.EntityManager;
@@ -45,6 +48,9 @@ class MatchRecordingServiceIT extends AbstractIntegrationTest {
 
 	@Autowired
 	private PointTransactionRepository pointTransactionRepository;
+
+	@Autowired
+	private SeasonStateRepository seasonStateRepository;
 
 	private Player player(String name) {
 		String username = name.toLowerCase() + "-" + System.nanoTime();
@@ -133,6 +139,25 @@ class MatchRecordingServiceIT extends AbstractIntegrationTest {
 
 		assertThat(a1Ranking.getPoints()).isEqualTo(a2Ranking.getPoints());
 		assertThat(a1Ranking.getPoints()).isGreaterThan(0);
+	}
+
+	@Test
+	void recordMatch_whileSeasonClosed_isRejectedAndAwardsNothing() {
+		Player winner = player("Winner");
+		Player loser = player("Loser");
+
+		SeasonState state = seasonStateRepository.findById(SeasonState.SINGLETON_ID).orElseThrow();
+		state.setOpen(false);
+
+		MatchRecordRequest request = new MatchRecordRequest(
+				MatchType.SINGLES,
+				null,
+				List.of(new MatchTeamRequest(MatchSide.A, List.of(winner.getId())), new MatchTeamRequest(MatchSide.B, List.of(loser.getId()))),
+				List.of(new MatchSetRequest(1, 4, 0), new MatchSetRequest(2, 4, 0), new MatchSetRequest(3, 4, 0)));
+
+		assertThatThrownBy(() -> matchRecordingService.recordMatch(request)).isInstanceOf(SeasonClosedException.class);
+
+		assertThat(playerRankingRepository.findByPlayerIdAndMatchType(winner.getId(), MatchType.SINGLES)).isEmpty();
 	}
 
 	@Test

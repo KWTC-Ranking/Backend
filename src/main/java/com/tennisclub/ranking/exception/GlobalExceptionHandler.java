@@ -43,6 +43,12 @@ public class GlobalExceptionHandler {
 				.body(ApiError.of(400, "Bad Request", ex.getMessage(), request.getRequestURI()));
 	}
 
+	@ExceptionHandler(SeasonClosedException.class)
+	public ResponseEntity<ApiError> handleSeasonClosed(SeasonClosedException ex, HttpServletRequest request) {
+		return ResponseEntity.status(HttpStatus.CONFLICT)
+				.body(ApiError.of(409, "Conflict", ex.getMessage(), request.getRequestURI()));
+	}
+
 	@ExceptionHandler(IllegalArgumentException.class)
 	public ResponseEntity<ApiError> handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
 		return ResponseEntity.badRequest()

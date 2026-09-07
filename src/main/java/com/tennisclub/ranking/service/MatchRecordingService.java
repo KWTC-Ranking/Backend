@@ -51,9 +51,16 @@ public class MatchRecordingService {
 	private final ScoringService scoringService;
 	private final TierRecalculationService tierRecalculationService;
 	private final RankingProperties rankingProperties;
+	private final SeasonStateService seasonStateService;
 
+	/**
+	 * Records a brand-new match. Gated on the season being open (see SeasonStateService) — admin
+	 * corrections/deletions of existing matches (below) are NOT gated, only new submissions.
+	 */
 	@Transactional
 	public MatchResponse recordMatch(MatchRecordRequest request) {
+		seasonStateService.requireOpen();
+
 		MatchTeamRequest teamARequest = requireSide(request, MatchSide.A);
 		MatchTeamRequest teamBRequest = requireSide(request, MatchSide.B);
 
